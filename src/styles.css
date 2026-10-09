@@ -105,10 +105,15 @@ button:focus-visible, input:focus-visible {
 /* Main Grid Layout */
 .dashboard-main {
   display: grid;
-  grid-template-columns: 1.2fr 0.8fr;
+  grid-template-columns: 1.15fr 0.85fr;
   gap: 24px;
-
   align-items: start;
+}
+
+.right-column-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
 }
 
 @media (max-width: 900px) {
@@ -125,12 +130,20 @@ button:focus-visible, input:focus-visible {
   padding: 20px;
 }
 
+.panel-title {
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--color-ink);
+  margin-bottom: 12px;
+  letter-spacing: -0.01em;
+}
+
 .chip {
   display: inline-flex;
   align-items: center;
   gap: 6px;
   font-size: 13px;
-  font-weight: 500;
+  font-weight: 600;
   padding: 4px 12px;
   border-radius: var(--radius-pill);
   border: 1px solid var(--color-chip-border);
@@ -330,6 +343,261 @@ button:focus-visible, input:focus-visible {
   font-weight: 600;
   color: var(--color-muted);
   margin-top: 4px;
+}
+
+/* Panel 1: Summary */
+.summary-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.big-count-display {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  margin: 4px 0;
+}
+
+.count-number {
+  font-size: 48px;
+  font-weight: 800;
+  line-height: 1;
+  color: var(--color-ink);
+  letter-spacing: -0.03em;
+}
+
+.count-total {
+  font-size: 18px;
+  font-weight: 600;
+  color: var(--color-muted);
+}
+
+.summary-footnote {
+  font-size: 14px;
+  color: var(--color-muted);
+  font-weight: 500;
+}
+
+/* Panel 2: Fix Toggles */
+.fix-toggles-panel {
+  display: flex;
+  flex-direction: column;
+}
+
+.toggles-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.fix-toggle-btn {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  width: 100%;
+  padding: 12px 14px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--color-panel-border);
+  background-color: var(--color-ground);
+  color: var(--color-ink);
+  text-align: left;
+  transition: background-color 200ms ease, color 200ms ease, border-color 200ms ease;
+}
+
+.fix-toggle-btn:hover {
+  border-color: var(--color-ink);
+}
+
+.fix-toggle-btn.active {
+  background-color: var(--color-ink);
+  color: #FFFFFF;
+  border-color: var(--color-ink);
+}
+
+.fix-info {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.fix-title {
+  font-size: 14px;
+  font-weight: 700;
+}
+
+.fix-rooms {
+  font-size: 12px;
+  opacity: 0.8;
+}
+
+.fix-badge {
+  font-size: 12px;
+  font-weight: 700;
+  padding: 3px 10px;
+  border-radius: var(--radius-pill);
+  border: 1px solid var(--color-chip-border);
+  background-color: var(--color-panel);
+  color: var(--color-ink);
+}
+
+.fix-toggle-btn.active .fix-badge {
+  background-color: rgba(255, 255, 255, 0.2);
+  color: #FFFFFF;
+  border-color: transparent;
+}
+
+/* Panel 3: Selected Room Card */
+.room-card-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.card-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.room-title {
+  font-size: 20px;
+  font-weight: 800;
+}
+
+.room-description {
+  font-size: 13px;
+  color: var(--color-muted);
+}
+
+.card-stats {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px 0;
+  border-top: 1px solid var(--color-panel-border);
+  border-bottom: 1px solid var(--color-panel-border);
+}
+
+.stat-row {
+  display: flex;
+  justify-content: space-between;
+  font-size: 13px;
+}
+
+.stat-label {
+  color: var(--color-muted);
+}
+
+.stat-value {
+  color: var(--color-ink);
+}
+
+.action-box {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin-top: 4px;
+}
+
+.action-label {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--color-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.action-text {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--color-ink);
+}
+
+.simulate-tap-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  width: 100%;
+  padding: 10px 16px;
+  border-radius: var(--radius-pill);
+  border: 1px solid var(--color-ink);
+  background-color: var(--color-ground);
+  color: var(--color-ink);
+  font-size: 13px;
+  font-weight: 700;
+  transition: background-color 150ms ease, color 150ms ease;
+}
+
+.simulate-tap-btn:hover {
+  background-color: var(--color-ink);
+  color: #FFFFFF;
+}
+
+/* Panel 4: Fix First */
+.fix-first-panel {
+  display: flex;
+  flex-direction: column;
+}
+
+.fix-first-list {
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.fix-first-btn {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  width: 100%;
+  padding: 10px;
+  border-radius: var(--radius-sm);
+  border: 1px solid transparent;
+  text-align: left;
+  transition: background-color 150ms ease;
+}
+
+.fix-first-btn:hover {
+  background-color: var(--color-ground);
+}
+
+.rank-num {
+  font-size: 16px;
+  font-weight: 800;
+  color: var(--color-muted);
+  width: 20px;
+}
+
+.item-content {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  flex: 1;
+}
+
+.item-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.item-room-id {
+  font-size: 14px;
+  font-weight: 700;
+}
+
+.mini-chip {
+  font-size: 11px;
+  padding: 2px 8px;
+  font-weight: 700;
+}
+
+.item-action {
+  font-size: 12px;
+  color: var(--color-muted);
 }
 
 /* Responsive adjustments for phone width down to 360px */

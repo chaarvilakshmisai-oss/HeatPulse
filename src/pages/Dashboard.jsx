@@ -1,13 +1,17 @@
-import React, { useState, useEffect, useMemo, useCallback } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import TimeControl from '../components/TimeControl.jsx';
 import RoomGrid from '../components/RoomGrid.jsx';
 import DayBars from '../components/DayBars.jsx';
+import Summary from '../components/Summary.jsx';
+import FixToggles from '../components/FixToggles.jsx';
+import RoomCard from '../components/RoomCard.jsx';
+import FixFirst from '../components/FixFirst.jsx';
 import { MOCK_ROOMS, HOURLY_CURVE, FIXES } from '../data/mock.js';
 import { score as calculateScore, calculateTotalReduction } from '../lib/scoring.js';
 
 export default function Dashboard() {
   const [hourIndex, setHourIndex] = useState(7); // Initial state: 2 PM (index 7)
-  const [selectedRoomId, setSelectedRoomId] = useState(301); // Initial state: 301
+  const [selectedRoomId, setSelectedRoomId] = useState(301); // Initial state: room 301
   const [isPlaying, setIsPlaying] = useState(false);
   const [activeFixes, setActiveFixes] = useState([]); // Initial state: no fixes
   const [simulatedTaps, setSimulatedTaps] = useState({});
@@ -53,6 +57,32 @@ export default function Dashboard() {
     return max;
   }, [getRoomScore]);
 
+  // Toggle What-If fixes
+  const handleToggleFix = useCallback((fixId) => {
+    setActiveFixes(prev => {
+      if (prev.includes(fixId)) {
+        return prev.filter(id => id !== fixId);
+      } else {
+        return [...prev, fixId];
+      }
+    });
+  }, []);
+
+  // Simulate resident tap
+  const handleAddTap = useCallback((roomId) => {
+    setSimulatedTaps(prev => ({
+      ...prev,
+      [roomId]: (prev[roomId] || 0) + 1
+    }));
+  }, []);
+
+  // Summary counts: hot rooms (score >= 65) with current fixes vs with no fixes
+  const hotRoomsCount = MOCK_ROOMS.filter(room => getRoomScore(room) >= 65).length;
+  const baseHotRoomsCount = MOCK_ROOMS.filter(room => getRoomScore(room, hourIndex, []) >= 65).length;
+
+  const selectedRoom = MOCK_ROOMS.find(r => r.id === selectedRoomId) || MOCK_ROOMS[0];
+  const selectedRoomScore = getRoomScore(selectedRoom);
+
   return (
     <div className="dashboard-container">
       <header className="dashboard-header">
@@ -89,8 +119,31 @@ export default function Dashboard() {
           />
         </section>
 
-        <section className="right-panel-placeholder">
-          {/* Phase 3 will populate right-hand panels */}
+        <section className="right-column-stack">
+          <Summary
+            hourIndex={hourIndex}
+            hotRoomsCount={hotRoomsCount}
+            baseHotRoomsCount={baseHotRoomsCount}
+            hasActiveFixes={activeFixes.length > 0}
+          />
+
+          <FixToggles
+            activeFixes={activeFixes}
+            onToggleFix={handleToggleFix}
+          />
+
+          <RoomCard
+            room={selectedRoom}
+            score={selectedRoomScore}
+            simulatedTaps={simulatedTaps[selectedRoomId] || 0}
+            onAddTap={handleAddTap}
+          />
+
+          <FixFirst
+            rooms={MOCK_ROOMS}
+            getRoomScore={getRoomScore}
+            onSelectRoom={setSelectedRoomId}
+          />
         </section>
       </main>
     </div>
