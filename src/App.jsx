@@ -1,17 +1,14 @@
 import React from 'react';
 import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
 import Dashboard from './pages/Dashboard.jsx';
-
-function TapPlaceholder() {
-  return <div style={{ padding: '20px' }}>Tap Page Placeholder</div>;
-}
+import Tap from './pages/Tap.jsx';
 
 export default function App() {
   return (
     <Router>
       <Routes>
         <Route path="/" element={<Dashboard />} />
-        <Route path="/tap" element={<TapPlaceholder />} />
+        <Route path="/tap" element={<Tap />} />
       </Routes>
     </Router>
   );
