@@ -102,6 +102,38 @@ button:focus-visible, input:focus-visible {
   flex-wrap: wrap;
 }
 
+.chip.alert-chip {
+  background-color: #FFF3D6;
+  border-color: #F0B24A;
+  color: #8A5300;
+}
+
+.loading-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 60px 20px;
+  gap: 16px;
+  text-align: center;
+  color: var(--color-muted);
+  font-size: 15px;
+  font-weight: 600;
+}
+
+.spinner {
+  width: 32px;
+  height: 32px;
+  border: 3px solid var(--color-panel-border);
+  border-top-color: var(--color-ink);
+  border-radius: 50%;
+  animation: spin 800ms linear infinite;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
 /* Main Grid Layout */
 .dashboard-main {
   display: grid;

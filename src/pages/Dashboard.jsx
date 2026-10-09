@@ -8,13 +8,40 @@ import RoomCard from '../components/RoomCard.jsx';
 import FixFirst from '../components/FixFirst.jsx';
 import { MOCK_ROOMS, HOURLY_CURVE, FIXES } from '../data/mock.js';
 import { score as calculateScore, calculateTotalReduction } from '../lib/scoring.js';
+import { getZones } from '../lib/api.js';
 
 export default function Dashboard() {
+  const [rooms, setRooms] = useState(MOCK_ROOMS);
+  const [isLoading, setIsLoading] = useState(true);
+  const [isUsingSampleData, setIsUsingSampleData] = useState(false);
+  const [apiErrorReason, setApiErrorReason] = useState(null);
+
   const [hourIndex, setHourIndex] = useState(7); // Initial state: 2 PM (index 7)
   const [selectedRoomId, setSelectedRoomId] = useState(301); // Initial state: room 301
   const [isPlaying, setIsPlaying] = useState(false);
   const [activeFixes, setActiveFixes] = useState([]); // Initial state: no fixes
   const [simulatedTaps, setSimulatedTaps] = useState({});
+
+  // Fetch zones on mount with API layer fallback
+  useEffect(() => {
+    let isMounted = true;
+    async function loadData() {
+      setIsLoading(true);
+      const res = await getZones();
+      if (isMounted) {
+        if (res.rooms && res.rooms.length > 0) {
+          setRooms(res.rooms);
+        }
+        setIsUsingSampleData(res.isUsingSampleData);
+        setApiErrorReason(res.reason || null);
+        setIsLoading(false);
+      }
+    }
+    loadData();
+    return () => {
+      isMounted = false;
+    };
+  }, []);
 
   // Playback timer effect: advances one hour every 800 ms and loops
   useEffect(() => {
@@ -50,12 +77,12 @@ export default function Dashboard() {
   // Peak score across all rooms at a given hour
   const getPeakScoreForHour = useCallback((targetHour) => {
     let max = 0;
-    for (const room of MOCK_ROOMS) {
+    for (const room of rooms) {
       const s = getRoomScore(room, targetHour);
       if (s > max) max = s;
     }
     return max;
-  }, [getRoomScore]);
+  }, [getRoomScore, rooms]);
 
   // Toggle What-If fixes
   const handleToggleFix = useCallback((fixId) => {
@@ -77,10 +104,10 @@ export default function Dashboard() {
   }, []);
 
   // Summary counts: hot rooms (score >= 65) with current fixes vs with no fixes
-  const hotRoomsCount = MOCK_ROOMS.filter(room => getRoomScore(room) >= 65).length;
-  const baseHotRoomsCount = MOCK_ROOMS.filter(room => getRoomScore(room, hourIndex, []) >= 65).length;
+  const hotRoomsCount = rooms.filter(room => getRoomScore(room) >= 65).length;
+  const baseHotRoomsCount = rooms.filter(room => getRoomScore(room, hourIndex, []) >= 65).length;
 
-  const selectedRoom = MOCK_ROOMS.find(r => r.id === selectedRoomId) || MOCK_ROOMS[0];
+  const selectedRoom = rooms.find(r => r.id === selectedRoomId) || rooms[0] || MOCK_ROOMS[0];
   const selectedRoomScore = getRoomScore(selectedRoom);
 
   return (
@@ -91,61 +118,72 @@ export default function Dashboard() {
           <span className="subtitle">Hostel Block C · Floor 3</span>
         </div>
         <div className="header-chips">
-          <span className="chip">Sample data</span>
+          {isUsingSampleData && (
+            <span className="chip alert-chip" title={apiErrorReason || "API not connected"}>
+              ⚠️ Using sample data
+            </span>
+          )}
           <span className="chip">Forecast 38°C · humidity 55%</span>
         </div>
       </header>
 
-      <main className="dashboard-main">
-        <section className="left-panel panel">
-          <TimeControl
-            hourIndex={hourIndex}
-            onChangeHour={handleHourChange}
-            isPlaying={isPlaying}
-            onTogglePlay={handleTogglePlay}
-          />
+      {isLoading ? (
+        <div className="loading-state panel" aria-live="polite">
+          <div className="spinner" aria-hidden="true"></div>
+          <p>Loading hostel heat map zones...</p>
+        </div>
+      ) : (
+        <main className="dashboard-main">
+          <section className="left-panel panel">
+            <TimeControl
+              hourIndex={hourIndex}
+              onChangeHour={handleHourChange}
+              isPlaying={isPlaying}
+              onTogglePlay={handleTogglePlay}
+            />
 
-          <RoomGrid
-            rooms={MOCK_ROOMS}
-            getRoomScore={getRoomScore}
-            selectedRoomId={selectedRoomId}
-            onSelectRoom={setSelectedRoomId}
-          />
+            <RoomGrid
+              rooms={rooms}
+              getRoomScore={getRoomScore}
+              selectedRoomId={selectedRoomId}
+              onSelectRoom={setSelectedRoomId}
+            />
 
-          <DayBars
-            currentHourIndex={hourIndex}
-            getPeakScoreForHour={getPeakScoreForHour}
-            onSelectHour={handleHourChange}
-          />
-        </section>
+            <DayBars
+              currentHourIndex={hourIndex}
+              getPeakScoreForHour={getPeakScoreForHour}
+              onSelectHour={handleHourChange}
+            />
+          </section>
 
-        <section className="right-column-stack">
-          <Summary
-            hourIndex={hourIndex}
-            hotRoomsCount={hotRoomsCount}
-            baseHotRoomsCount={baseHotRoomsCount}
-            hasActiveFixes={activeFixes.length > 0}
-          />
+          <section className="right-column-stack">
+            <Summary
+              hourIndex={hourIndex}
+              hotRoomsCount={hotRoomsCount}
+              baseHotRoomsCount={baseHotRoomsCount}
+              hasActiveFixes={activeFixes.length > 0}
+            />
 
-          <FixToggles
-            activeFixes={activeFixes}
-            onToggleFix={handleToggleFix}
-          />
+            <FixToggles
+              activeFixes={activeFixes}
+              onToggleFix={handleToggleFix}
+            />
 
-          <RoomCard
-            room={selectedRoom}
-            score={selectedRoomScore}
-            simulatedTaps={simulatedTaps[selectedRoomId] || 0}
-            onAddTap={handleAddTap}
-          />
+            <RoomCard
+              room={selectedRoom}
+              score={selectedRoomScore}
+              simulatedTaps={simulatedTaps[selectedRoomId] || 0}
+              onAddTap={handleAddTap}
+            />
 
-          <FixFirst
-            rooms={MOCK_ROOMS}
-            getRoomScore={getRoomScore}
-            onSelectRoom={setSelectedRoomId}
-          />
-        </section>
-      </main>
+            <FixFirst
+              rooms={rooms}
+              getRoomScore={getRoomScore}
+              onSelectRoom={setSelectedRoomId}
+            />
+          </section>
+        </main>
+      )}
     </div>
   );
 }
