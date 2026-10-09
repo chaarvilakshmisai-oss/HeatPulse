@@ -1,0 +1,60 @@
+/* Global Design Tokens & Styles for HeatPulse */
+:root {
+  --color-ground: #F6F4EF;
+  --color-panel: #FFFFFF;
+  --color-panel-border: #E3DFD5;
+  --color-ink: #1C1B19;
+  --color-muted: #5F5B52;
+  --color-chip-border: #D9D5CB;
+
+  /* Heat Stops */
+  --heat-0: #A9D3B5;
+  --heat-45: #F0B24A;
+  --heat-72: #D9622F;
+  --heat-100: #8F2410;
+
+  --font-family: 'Manrope', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  --radius-panel: 16px;
+  --radius-pill: 9999px;
+  --radius-sm: 8px;
+
+  --transition-speed: 350ms;
+}
+
+*, *::before, *::after {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  font-family: var(--font-family);
+  background-color: var(--color-ground);
+  color: var(--color-ink);
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+  min-height: 100vh;
+}
+
+button {
+  font-family: inherit;
+  font-size: inherit;
+  color: inherit;
+  background: none;
+  border: none;
+  cursor: pointer;
+}
+
+/* Reduced Motion Override */
+@media (prefers-reduced-motion: reduce) {
+  *, ::before, ::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+
+  .room-tile:hover, .day-bar:hover {
+    transform: none !important;
+  }
+}
