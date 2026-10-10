@@ -1,42 +1,21 @@
 export const HOURLY_CURVE = [
-  0.18, 0.24, 0.32, 0.44, 0.58, 0.74, 0.88, 0.94, 0.82, 0.62, 0.44, 0.30
+  0.18, 0.24, 0.32, 0.44, 0.58, 0.74, 0.88, 0.94, 0.82, 0.62, 0.44, 0.3,
 ];
 
-export const MOCK_ROOMS = [
-  { id: 301, exposure: 0.95, baseTaps: 14, description: "West-facing · top floor" },
-  { id: 302, exposure: 0.90, baseTaps: 11, description: "West-facing · top floor" },
-  { id: 303, exposure: 0.70, baseTaps: 7,  description: "Top floor" },
-  { id: 304, exposure: 0.65, baseTaps: 5,  description: "Top floor" },
-  { id: 305, exposure: 0.40, baseTaps: 2,  description: "Top floor · east side" },
-  { id: 306, exposure: 0.35, baseTaps: 1,  description: "Top floor · east side" },
-  { id: 311, exposure: 0.60, baseTaps: 4,  description: "Corner · west side" },
-  { id: 312, exposure: 0.35, baseTaps: 1,  description: "Mid block" },
-  { id: 313, exposure: 0.30, baseTaps: 0,  description: "Mid block" },
-  { id: 314, exposure: 0.30, baseTaps: 1,  description: "Mid block" },
-  { id: 315, exposure: 0.35, baseTaps: 1,  description: "Mid block" },
-  { id: 316, exposure: 0.60, baseTaps: 4,  description: "Corner · east side" }
+export const MOCK_ZONES = [
+  { id: 'furnace', name: 'Furnace bay', exposure: 0.95, baseTaps: 14, description: 'Process heat · indoor' },
+  { id: 'forging', name: 'Forging', exposure: 0.88, baseTaps: 11, description: 'Process heat · indoor' },
+  { id: 'welding', name: 'Welding', exposure: 0.8, baseTaps: 9, description: 'Radiant heat · indoor' },
+  { id: 'paint', name: 'Paint booth', exposure: 0.7, baseTaps: 5, description: 'Enclosed · poor ventilation' },
+  { id: 'press', name: 'Press shop', exposure: 0.55, baseTaps: 6, description: 'Metal roof · indoor' },
+  { id: 'asmA', name: 'Assembly A', exposure: 0.45, baseTaps: 4, description: 'Indoor · metal roof' },
+  { id: 'asmB', name: 'Assembly B', exposure: 0.4, baseTaps: 3, description: 'Indoor' },
+  { id: 'pack', name: 'Packing', exposure: 0.4, baseTaps: 3, description: 'Indoor' },
+  { id: 'dock', name: 'Loading dock', exposure: 0.75, baseTaps: 8, description: 'Outdoor · direct sun' },
+  { id: 'wh', name: 'Warehouse', exposure: 0.5, baseTaps: 5, description: 'Metal roof · indoor' },
+  { id: 'can', name: 'Canteen', exposure: 0.3, baseTaps: 1, description: 'Indoor · ventilated' },
+  { id: 'off', name: 'Office', exposure: 0.2, baseTaps: 0, description: 'Air-conditioned' },
 ];
 
-export const FIXES = [
-  {
-    id: "shade",
-    title: "Shade west windows",
-    roomsNote: "Rooms 301, 302, 311",
-    targetRooms: [301, 302, 311],
-    reduction: 0.30
-  },
-  {
-    id: "vents",
-    title: "Open corridor vents",
-    roomsNote: "Rooms 301–306",
-    targetRooms: [301, 302, 303, 304, 305, 306],
-    reduction: 0.15
-  },
-  {
-    id: "fans",
-    title: "Run fans early",
-    roomsNote: "All rooms",
-    targetRooms: [301, 302, 303, 304, 305, 306, 311, 312, 313, 314, 315, 316],
-    reduction: 0.10
-  }
-];
+export const MOCK_ROOMS = MOCK_ZONES;
+export const FIXES = [];
