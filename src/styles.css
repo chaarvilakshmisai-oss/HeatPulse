@@ -78,7 +78,7 @@ button:focus-visible {
   display: flex;
   flex-direction: column;
   gap: 16px;
-  width: min(100%, 1156px);
+  width: min(100%, 1100px);
   margin: 0 auto;
   padding: 24px 28px;
 }
@@ -358,6 +358,7 @@ button:focus-visible {
 .tap-success-msg { margin: 0; color: var(--ink); }
 .tap-again-btn { padding: 10px 18px; border: 0; border-radius: 10px; background: #153E8A; color: #fff; }
 .tap-footer { color: var(--ink); font-size: 12px; text-align: center; }
+.tap-error { margin: 0; color: #C0243A; font-size: 13px; text-align: center; }
 
 @media (max-width: 900px) {
   .dashboard-layout { grid-template-columns: 1fr; }

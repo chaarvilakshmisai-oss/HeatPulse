@@ -57,13 +57,3 @@ export function formatRanges(hourIndices) {
     )
     .join(', ');
 }
-
-export const formatHour = hourLabel;
-
-export function textColor(value) {
-  return value >= 82 ? '#FFFFFF' : '#0B1220';
-}
-
-export function calculateTotalReduction() {
-  return 0;
-}

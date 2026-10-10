@@ -16,6 +16,3 @@ export const MOCK_ZONES = [
   { id: 'can', name: 'Canteen', exposure: 0.3, baseTaps: 1, description: 'Indoor · ventilated' },
   { id: 'off', name: 'Office', exposure: 0.2, baseTaps: 0, description: 'Air-conditioned' },
 ];
-
-export const MOCK_ROOMS = MOCK_ZONES;
-export const FIXES = [];

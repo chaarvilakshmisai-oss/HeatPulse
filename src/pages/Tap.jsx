@@ -1,7 +1,7 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { MOCK_ZONES } from '../data/mock.js';
-import { sendReport } from '../lib/api.js';
+import { getZones, sendReport } from '../lib/api.js';
 import Sky from '../components/Sky.jsx';
 
 const OPTIONS = [
@@ -13,19 +13,42 @@ const OPTIONS = [
 export default function Tap() {
   const [searchParams] = useSearchParams();
   const zoneId = searchParams.get('zone') || 'furnace';
-  const zone = MOCK_ZONES.find((item) => item.id === zoneId);
+  const [zones, setZones] = useState(MOCK_ZONES);
+  const [isUsingSampleData, setIsUsingSampleData] = useState(true);
+  const [error, setError] = useState('');
+  const zone = zones.find((item) => item.id === zoneId);
   const zoneName = zone?.name || zoneId;
   const [selectedLevel, setSelectedLevel] = useState(null);
   const [isSubmitted, setIsSubmitted] = useState(false);
   const [isSending, setIsSending] = useState(false);
   const selectedOption = OPTIONS.find((option) => option.level === selectedLevel);
 
+  useEffect(() => {
+    let active = true;
+    getZones().then((result) => {
+      if (!active) return;
+      if (Array.isArray(result.zones) && result.zones.length) setZones(result.zones);
+      setIsUsingSampleData(result.isUsingSampleData);
+    });
+    return () => {
+      active = false;
+    };
+  }, []);
+
   async function handleSend() {
     if (!selectedLevel || isSending) return;
     setIsSending(true);
-    await sendReport(zoneId, selectedLevel);
-    setIsSubmitted(true);
-    setIsSending(false);
+    setError('');
+    try {
+      const result = await sendReport(zoneId, selectedLevel);
+      if (result.mocked) setIsUsingSampleData(true);
+      setIsSubmitted(true);
+    } catch (requestError) {
+      console.error('Unable to record worker tap.', requestError);
+      setError('Your tap could not be recorded. Please try again.');
+    } finally {
+      setIsSending(false);
+    }
   }
 
   function resetTap() {
@@ -43,6 +66,7 @@ export default function Tap() {
             <span>for Industry</span>
           </div>
           <p className="tap-subtitle">Sample Plant · {zoneName}</p>
+          {isUsingSampleData && <p className="sample-note">Sample data in use</p>}
         </header>
 
         <section className="card tap-main">
@@ -82,6 +106,7 @@ export default function Tap() {
               >
                 {isSending ? 'Sending…' : 'Send my tap'}
               </button>
+              {error && <p className="tap-error" role="alert">{error}</p>}
             </>
           )}
         </section>
