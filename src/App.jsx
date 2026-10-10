@@ -8,6 +8,7 @@ import Tap from './pages/Tap.jsx';
 import Zones from './pages/Zones.jsx';
 import Site from './pages/Site.jsx';
 import QrCodes from './pages/QrCodes.jsx';
+import Reports from './pages/Reports.jsx';
 import { AppShell } from './components/AppShell.jsx';
 import SimplePage from './pages/SimplePage.jsx';
 
@@ -72,7 +73,7 @@ function ManagerRoutes() {
           <Route path="zones" element={<Zones />} />
           <Route path="site" element={<Site />} />
           <Route path="qr" element={<QrCodes />} />
-          <Route path="reports" element={<SimplePage title="Reports" />} />
+          <Route path="reports" element={<Reports />} />
         </Route>
       </Route>
       <Route path="*" element={<Navigate to="/app/dashboard" replace />} />

@@ -1,28 +1,57 @@
 # HeatPulse for Industry
 
-A hackathon prototype that turns worker heat reports and a sample hourly forecast into advisory, zone-by-zone heat guidance for a factory.
+A React + Vite manager dashboard and anonymous worker heat-reporting page. The forecast and exposure scoring are prototypes; reports and site data should be treated as advisory.
 
 ## Run locally
 
 ```bash
 npm install
 npm run dev
+npm test
+npm run build
 ```
 
-Open the Vite URL shown in the terminal. The supervisor dashboard is `/`; the worker tap page is `/tap?zone=press`.
+## Configuration
 
-Run the scoring tests with `npm test` and create a production build with `npm run build`.
-
-## Optional API
-
-Set `VITE_API_URL` in a root `.env.local` file to connect a backend:
+Create a root `.env.local` file:
 
 ```env
 VITE_API_URL=https://your-api.example.com
+VITE_USER_POOL_ID=your-cognito-user-pool-id
+VITE_USER_POOL_CLIENT_ID=your-cognito-app-client-id
 ```
 
-The frontend expects `GET {VITE_API_URL}/zones` to return an array of `{ id, name, exposure, baseTaps, description }` objects. Worker taps are sent with `POST {VITE_API_URL}/report` and a JSON body of `{ "zoneId": "press", "level": 1 }`, where `level` is `1` for Fine, `2` for Warm, and `3` for Too hot. If the URL is unset or a request fails, the app falls back to its sample data and keeps working.
+Vite exposes these values to the browser, so they must not contain secrets. The user-pool ID and app client ID are identifiers, not credentials. Manager API calls use the Cognito ID token in the `Authorization` header.
 
-## Prototype guidance
+If `VITE_USER_POOL_ID` is unset, the app runs in **Demo mode**: manager sign-in is bypassed, and site, zone, and report data live only in memory and reset when the page reloads. No IDs are embedded in the frontend.
 
-The scoring formula in `src/lib/scoring.js` is a placeholder intended to be replaced with a standards-based model without changing the UI. The zones, report counts, and hourly forecast are sample data. This prototype provides advisory guidance only; it is not medical or legal advice.
+The configured API is expected to implement:
+
+- Public `GET /public/sites/{siteId}` and `POST /report`
+- Manager `GET /site`, `PUT /site`, `GET /zones`, and `GET /reports?limit=`
+
+## Manager accounts
+
+There is no self-sign-up or password-reset screen. A plant administrator creates manager accounts in the configured Cognito user pool. For example, using AWS CLI (replace the pool ID and set a secure password through your approved secret-handling process):
+
+```bash
+aws cognito-idp admin-create-user \
+  --user-pool-id "<USER_POOL_ID>" \
+  --username "manager@example.com" \
+  --user-attributes Name=email,Value=manager@example.com Name=email_verified,Value=true \
+  --message-action SUPPRESS
+
+aws cognito-idp admin-set-user-password \
+  --user-pool-id "<USER_POOL_ID>" \
+  --username "manager@example.com" \
+  --password "<STRONG_PASSWORD>" \
+  --permanent
+```
+
+The administrator should deliver the initial credentials securely. If Cognito requires a new password during sign-in, the manager must ask their administrator to reset it; the app intentionally has no password-change flow.
+
+## Prototype limitations
+
+- Location verification uses coordinates reported by the browser. It is a soft check, not proof of presence; browser/device coordinates can be inaccurate or faked.
+- The heat scoring formula and forecast curve are placeholders, not a standards-based assessment.
+- Demo values are sample data; configured site exposures and related guidance may be estimates. All displayed risk and work guidance is advisory only, not medical or legal advice.
