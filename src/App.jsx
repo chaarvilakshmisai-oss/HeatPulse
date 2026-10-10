@@ -75,7 +75,7 @@ function ManagerRoutes() {
   useEffect(() => {
     function handleUnauthorized() {
       signOut();
-      navigate('/login', { replace: true, state: { message: 'Your session has expired. Please sign in again.' } });
+      navigate('/login', { replace: true, state: { message: 'Your session expired. Please sign in again.' } });
     }
     window.addEventListener('heatpulse:unauthorized', handleUnauthorized);
     return () => window.removeEventListener('heatpulse:unauthorized', handleUnauthorized);

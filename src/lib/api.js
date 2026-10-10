@@ -1,7 +1,7 @@
 import { MOCK_ZONES } from '../data/mock.js';
 import { estimateExposure } from './exposure.js';
 import { getIdToken, isDemoMode, signOut } from './auth.js';
-import { buildApiUrl } from './config.js';
+import { API_BASE_URL, buildApiUrl } from './config.js';
 
 const DEMO_SITE_ID = 'sample-site';
 const demoSite = {
@@ -27,6 +27,9 @@ const demoSite = {
   })),
 };
 const demoReports = [];
+const REQUEST_TIMEOUT_MS = 15_000;
+const NETWORK_ERROR_MESSAGE = "Can't reach the server. Check your connection and try again.";
+const SESSION_EXPIRED_MESSAGE = 'Your session expired. Please sign in again.';
 
 function distanceBetween(lat1, lon1, lat2, lon2) {
   const radians = (degrees) => degrees * Math.PI / 180;
@@ -41,36 +44,71 @@ export class ApiError extends Error {
   constructor(message, status, code) {
     super(message);
     this.name = 'ApiError';
-    this.status = status;
-    this.code = code;
+    if (status !== undefined) this.status = status;
+    if (code !== undefined) this.code = code;
+  }
+}
+
+function friendlyNetworkError() {
+  return new ApiError(NETWORK_ERROR_MESSAGE);
+}
+
+function errorCode(payload) {
+  return payload?.code || (typeof payload?.error === 'string' ? payload.error : undefined);
+}
+
+async function parseJson(response) {
+  if (response.status === 204) return null;
+  try {
+    return await response.json();
+  } catch (error) {
+    if (error instanceof SyntaxError) return null;
+    throw error;
   }
 }
 
 async function request(path, options = {}, manager = false) {
+  const method = (options.method || 'GET').toUpperCase();
   const headers = new Headers(options.headers || {});
-  if (options.body) headers.set('Content-Type', 'application/json');
+  if (options.body !== undefined) headers.set('Content-Type', 'application/json');
   if (manager && !isDemoMode()) headers.set('Authorization', await getIdToken());
 
-  const response = await fetch(buildApiUrl(path), { ...options, headers });
-  if (manager && response.status === 401) {
-    signOut();
-    if (typeof window !== 'undefined') window.dispatchEvent(new Event('heatpulse:unauthorized'));
-  }
-  if (!response.ok) {
-    let message = `Request failed (${response.status}). Please try again.`;
-    let code;
+  let response;
+  let payload;
+  for (let attempt = 0; attempt < (method === 'GET' ? 2 : 1); attempt += 1) {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
     try {
-      const payload = await response.json();
-      if (payload.message) message = payload.message;
-      else if (payload.error) message = payload.error;
-      code = payload.code || (typeof payload.error === 'string' ? payload.error : undefined);
+      response = await fetch(buildApiUrl(path), {
+        ...options,
+        method,
+        headers,
+        signal: controller.signal,
+      });
+      payload = await parseJson(response);
+      break;
     } catch {
-      // Use the status-based message when the response has no JSON body.
+      if (attempt === (method === 'GET' ? 1 : 0)) throw friendlyNetworkError();
+    } finally {
+      clearTimeout(timeout);
     }
-    throw new ApiError(message, response.status, code);
   }
-  if (response.status === 204) return null;
-  return response.json();
+
+  if (!response.ok) {
+    if (manager && response.status === 401) {
+      signOut();
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(new Event('heatpulse:unauthorized'));
+      }
+      throw new ApiError(SESSION_EXPIRED_MESSAGE, response.status, errorCode(payload));
+    }
+    throw new ApiError(
+      payload?.error || payload?.message || `Request failed (${response.status}). Please try again.`,
+      response.status,
+      errorCode(payload),
+    );
+  }
+  return payload;
 }
 
 export async function getPublicSite(siteId) {
@@ -85,31 +123,27 @@ export async function getPublicSite(siteId) {
   return request(`/public/sites/${encodeURIComponent(siteId)}`);
 }
 
-export async function sendReport(payload) {
+export async function sendReport(report) {
   if (isDemoMode()) {
-    if (payload.siteId !== DEMO_SITE_ID) throw new ApiError('This plant could not be found.', 404);
-    const zone = demoSite.zones.find((item) => item.id === payload.zoneId);
+    if (report.siteId !== DEMO_SITE_ID) throw new ApiError('This plant could not be found.', 404);
+    const zone = demoSite.zones.find((item) => item.id === report.zoneId);
     if (!zone) throw new ApiError('This work area could not be found.', 404);
     if (demoSite.requireLocation) {
-      if (!Number.isFinite(payload.lat) || !Number.isFinite(payload.lon)) {
+      if (!Number.isFinite(report.lat) || !Number.isFinite(report.lon)) {
         throw new ApiError('Workers must allow location access on their phones.', 403, 'location_required');
       }
-      const distanceM = distanceBetween(demoSite.lat, demoSite.lon, payload.lat, payload.lon);
+      const distanceM = distanceBetween(demoSite.lat, demoSite.lon, report.lat, report.lon);
       if (distanceM > demoSite.radiusM) {
         throw new ApiError('You appear to be outside the plant area.', 403, 'outside_area');
       }
     }
-    const entry = {
-      ...payload,
-      createdAt: new Date().toISOString(),
-      locationVerified: Number.isFinite(payload.lat) && Number.isFinite(payload.lon),
-    };
-    demoReports.unshift(entry);
+    const verified = Number.isFinite(report.lat) && Number.isFinite(report.lon);
+    demoReports.unshift({ ...report, ts: new Date().toISOString(), verified });
     zone.tapsToday += 1;
-    if (payload.level === 3) zone.recentTooHotTaps += 1;
-    return { success: true, mocked: true };
+    if (report.level === 3) zone.recentTooHotTaps += 1;
+    return { ok: true, verified };
   }
-  return request('/report', { method: 'POST', body: JSON.stringify(payload) });
+  return request('/report', { method: 'POST', body: JSON.stringify(report) });
 }
 
 export async function getSite() {
@@ -122,36 +156,36 @@ export async function getSite() {
   }
 }
 
-export async function saveSite(payload) {
+export async function saveSite(site) {
   if (isDemoMode()) {
-    const distanceM = payload.deviceLocation
-      ? distanceBetween(payload.lat, payload.lon, payload.deviceLocation.lat, payload.deviceLocation.lon)
+    const distanceM = site.deviceLocation
+      ? distanceBetween(site.lat, site.lon, site.deviceLocation.lat, site.deviceLocation.lon)
       : null;
-    const verified = distanceM !== null && distanceM <= payload.radiusM;
-    const locationCheck = payload.deviceLocation
+    const verified = distanceM !== null && distanceM <= site.radiusM;
+    const locationCheck = site.deviceLocation
       ? verified
-        ? { status: 'verified', verifiedAt: new Date().toISOString() }
+        ? { status: 'verified' }
         : { status: 'outside', distanceM }
       : { status: 'missing' };
-    const { deviceLocation, ...site } = payload;
-    const movedPlant = payload.lat !== demoSite.lat || payload.lon !== demoSite.lon;
-    const previousZones = new Map(demoSite.zones.map((zone) => [zone.id, zone]));
-    const zones = (payload.zones || demoSite.zones).map((zone, index) => {
-      const previous = previousZones.get(zone.id);
+    const { deviceLocation, ...savedSite } = site;
+    const movedPlant = site.lat !== demoSite.lat || site.lon !== demoSite.lon;
+    const existingZones = new Map(demoSite.zones.map((zone) => [zone.id, zone]));
+    const zones = (site.zones || demoSite.zones).map((zone, index) => {
+      const existing = existingZones.get(zone.id);
       return {
         ...zone,
         id: zone.id || `demo-zone-${Date.now()}-${index}`,
         exposure: Number.isFinite(zone.exposure) ? zone.exposure : estimateExposure(zone),
-        tapsToday: previous?.tapsToday ?? zone.tapsToday ?? 0,
-        recentTooHotTaps: previous?.recentTooHotTaps ?? zone.recentTooHotTaps ?? 0,
+        tapsToday: existing?.tapsToday ?? zone.tapsToday ?? 0,
+        recentTooHotTaps: existing?.recentTooHotTaps ?? zone.recentTooHotTaps ?? 0,
       };
     });
-    Object.assign(demoSite, site, { zones, siteId: DEMO_SITE_ID });
-    if (locationCheck.status === 'verified') demoSite.locationVerifiedAt = locationCheck.verifiedAt;
+    Object.assign(demoSite, savedSite, { zones, siteId: DEMO_SITE_ID });
+    if (verified) demoSite.locationVerifiedAt = new Date().toISOString();
     else if (movedPlant) demoSite.locationVerifiedAt = null;
     return { site: structuredClone(demoSite), locationCheck };
   }
-  return request('/site', { method: 'PUT', body: JSON.stringify(payload) }, true);
+  return request('/site', { method: 'PUT', body: JSON.stringify(site) }, true);
 }
 
 export async function getZones() {
@@ -162,6 +196,11 @@ export async function getZones() {
 export async function getReports(limit = 50) {
   if (isDemoMode()) return structuredClone(demoReports.slice(0, limit));
   return request(`/reports?limit=${encodeURIComponent(limit)}`, {}, true);
+}
+
+export async function getHealth() {
+  if (isDemoMode() && !API_BASE_URL) return { ok: true, demo: true };
+  return request('/health');
 }
 
 export function isDemoSite() {
