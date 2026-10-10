@@ -1,8 +1,8 @@
 import { MOCK_ZONES } from '../data/mock.js';
 import { estimateExposure } from './exposure.js';
 import { getIdToken, isDemoMode, signOut } from './auth.js';
+import { buildApiUrl } from './config.js';
 
-const API_BASE = (import.meta.env.VITE_API_URL || '').replace(/\/+$/, '');
 const DEMO_SITE_ID = 'sample-site';
 const demoSite = {
   siteId: DEMO_SITE_ID,
@@ -46,17 +46,12 @@ export class ApiError extends Error {
   }
 }
 
-function apiUrl(path) {
-  if (!API_BASE) throw new Error('VITE_API_URL is not configured.');
-  return `${API_BASE}${path}`;
-}
-
 async function request(path, options = {}, manager = false) {
   const headers = new Headers(options.headers || {});
   if (options.body) headers.set('Content-Type', 'application/json');
   if (manager && !isDemoMode()) headers.set('Authorization', await getIdToken());
 
-  const response = await fetch(apiUrl(path), { ...options, headers });
+  const response = await fetch(buildApiUrl(path), { ...options, headers });
   if (manager && response.status === 401) {
     signOut();
     if (typeof window !== 'undefined') window.dispatchEvent(new Event('heatpulse:unauthorized'));

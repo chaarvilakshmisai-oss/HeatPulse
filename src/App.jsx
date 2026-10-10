@@ -10,6 +10,26 @@ import Site from './pages/Site.jsx';
 import QrCodes from './pages/QrCodes.jsx';
 import Reports from './pages/Reports.jsx';
 import { AppShell } from './components/AppShell.jsx';
+import { getAppConfigurationProblem } from './lib/config.js';
+import Sky from './components/Sky.jsx';
+
+export function ConfigurationProblem({ missing }) {
+  return (
+    <div className="sky-shell">
+      <Sky />
+      <main className="login-wrap">
+        <section className="login-card card" role="alert">
+          <h1>Configuration problem</h1>
+          <p>This app is missing required environment configuration:</p>
+          <ul>
+            {missing.map((variable) => <li key={variable}><code>{variable}</code></li>)}
+          </ul>
+          <p>Set the missing value in the frontend environment and rebuild the app.</p>
+        </section>
+      </main>
+    </div>
+  );
+}
 
 export function protectedRouteDecision(user, location) {
   if (user === undefined) return { status: 'loading' };
@@ -114,6 +134,10 @@ function SiteRequired() {
 }
 
 export default function App() {
+  const missingConfiguration = getAppConfigurationProblem();
+  if (missingConfiguration.length) {
+    return <ConfigurationProblem missing={missingConfiguration} />;
+  }
   return (
     <Router>
       <ManagerRoutes />

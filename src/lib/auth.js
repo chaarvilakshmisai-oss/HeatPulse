@@ -1,23 +1,25 @@
 import { CognitoUser, CognitoUserPool, AuthenticationDetails } from 'amazon-cognito-identity-js';
+import { IS_DEMO_MODE, USER_POOL_CLIENT_ID, USER_POOL_ID } from './config.js';
 
-const userPoolId = import.meta.env.VITE_USER_POOL_ID;
-const clientId = import.meta.env.VITE_USER_POOL_CLIENT_ID;
-const demoMode = !userPoolId;
 let userPool;
 
 function getUserPool() {
-  if (demoMode) return null;
-  if (!clientId) throw new Error('VITE_USER_POOL_CLIENT_ID must be configured with VITE_USER_POOL_ID.');
-  if (!userPool) userPool = new CognitoUserPool({ UserPoolId: userPoolId, ClientId: clientId });
+  if (IS_DEMO_MODE) return null;
+  if (!userPool) {
+    userPool = new CognitoUserPool({
+      UserPoolId: USER_POOL_ID,
+      ClientId: USER_POOL_CLIENT_ID,
+    });
+  }
   return userPool;
 }
 
 export function isDemoMode() {
-  return demoMode;
+  return IS_DEMO_MODE;
 }
 
 export function signIn(email, password) {
-  if (demoMode) return Promise.resolve({ email: 'Demo manager', demo: true });
+  if (IS_DEMO_MODE) return Promise.resolve({ email: 'Demo manager', demo: true });
   const pool = getUserPool();
   const user = new CognitoUser({ Username: email, Pool: pool });
   const details = new AuthenticationDetails({ Username: email, Password: password });
@@ -32,13 +34,13 @@ export function signIn(email, password) {
 }
 
 export function signOut() {
-  if (demoMode) return;
+  if (IS_DEMO_MODE) return;
   const pool = getUserPool();
   pool.getCurrentUser()?.signOut();
 }
 
 export function getCurrentUser() {
-  if (demoMode) return Promise.resolve({ email: 'Demo manager', demo: true });
+  if (IS_DEMO_MODE) return Promise.resolve({ email: 'Demo manager', demo: true });
   const pool = getUserPool();
   const user = pool.getCurrentUser();
   if (!user) return Promise.resolve(null);
@@ -55,7 +57,7 @@ export function getCurrentUser() {
 }
 
 export function getIdToken() {
-  if (demoMode) return Promise.resolve(null);
+  if (IS_DEMO_MODE) return Promise.resolve(null);
   const pool = getUserPool();
   const user = pool.getCurrentUser();
   if (!user) return Promise.reject(new Error('Your session has expired. Please sign in again.'));
