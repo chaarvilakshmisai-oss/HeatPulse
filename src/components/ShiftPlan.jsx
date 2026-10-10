@@ -1,4 +1,4 @@
-import { formatRanges, score } from '../lib/scoring.js';
+import { formatRanges, scoreZone } from '../lib/scoring.js';
 
 export default function ShiftPlan({ zones }) {
   const safeHours = [];
@@ -7,10 +7,10 @@ export default function ShiftPlan({ zones }) {
   const outdoorZones = zones.filter((zone) => zone.kind === 'outdoor' || zone.id === 'dock');
 
   for (let hour = 0; hour < 12; hour += 1) {
-    const highestScore = Math.max(...zones.map((zone) => score(zone, hour, zone.exposure, zone.recentTooHotTaps || 0)));
+    const highestScore = Math.max(...zones.map((zone) => scoreZone(zone, hour)));
     if (highestScore < 65) safeHours.push(hour);
     else restHours.push(hour);
-    if (outdoorZones.some((zone) => score(zone, hour, zone.exposure, zone.recentTooHotTaps || 0) >= 65)) loadingHours.push(hour);
+    if (outdoorZones.some((zone) => scoreZone(zone, hour) >= 65)) loadingHours.push(hour);
   }
 
   const entries = [

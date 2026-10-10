@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { getSite, saveSite } from '../lib/api.js';
+import { getHealth, getSite, saveSite } from '../lib/api.js';
+import { buildSitePayload } from '../lib/sitePayload.js';
 import { validateSite } from '../lib/validation.js';
 
 const INITIAL_SITE = { name: '', lat: '', lon: '', radiusM: 300, requireLocation: false, zones: [] };
@@ -25,6 +26,8 @@ function displayTime(value) {
 export default function Site() {
   const [site, setSite] = useState(INITIAL_SITE);
   const [loading, setLoading] = useState(true);
+  const [connectionStatus, setConnectionStatus] = useState('checking');
+  const [connectionError, setConnectionError] = useState('');
   const [saving, setSaving] = useState(false);
   const [gettingLocation, setGettingLocation] = useState(false);
   const [accuracy, setAccuracy] = useState(null);
@@ -50,6 +53,29 @@ export default function Site() {
     };
   }, []);
 
+  useEffect(() => {
+    let active = true;
+    getHealth()
+      .then((result) => {
+        if (!active) return;
+        if (result?.ok) {
+          setConnectionStatus('ok');
+          setConnectionError('');
+        } else {
+          setConnectionStatus('error');
+          setConnectionError('API is not configured or reachable.');
+        }
+      })
+      .catch((healthError) => {
+        if (!active) return;
+        setConnectionStatus('error');
+        setConnectionError(healthError.message || 'Unable to reach the API.');
+      });
+    return () => {
+      active = false;
+    };
+  }, []);
+
   function update(field, value) {
     setSite((current) => ({ ...current, [field]: value }));
     setErrors((current) => ({ ...current, [field]: undefined }));
@@ -61,15 +87,8 @@ export default function Site() {
     }
   }
 
-  function payload() {
-    return {
-      name: site.name.trim(),
-      lat: Number(site.lat),
-      lon: Number(site.lon),
-      radiusM: Number(site.radiusM),
-      requireLocation: site.requireLocation,
-      zones: site.zones || [],
-    };
+  function payload(deviceLocation) {
+    return buildSitePayload(site, site.zones || [], deviceLocation);
   }
 
   function validSite() {
@@ -119,9 +138,10 @@ export default function Site() {
   }
 
   async function persist(deviceLocation) {
-    const result = await saveSite({ ...payload(), ...(deviceLocation ? { deviceLocation } : {}) });
-    const savedSite = result.site || { ...site };
-    setSite((current) => ({ ...current, ...savedSite }));
+    const result = await saveSite(payload(deviceLocation));
+    const savedSite = await getSite();
+    if (!savedSite) throw new Error('The saved plant could not be reloaded.');
+    setSite({ ...INITIAL_SITE, ...savedSite });
     setLocationCheck(deviceLocation ? result.locationCheck || null : null);
     setSuccess(deviceLocation ? 'Plant location check completed.' : 'Plant details saved.');
   }
@@ -146,8 +166,10 @@ export default function Site() {
     setSuccess('');
     try {
       const deviceLocation = await readPosition();
-      const result = await saveSite({ ...payload(), deviceLocation });
-      setSite((current) => ({ ...current, ...(result.site || {}), locationVerifiedAt: result.site?.locationVerifiedAt || null }));
+      const result = await saveSite(payload(deviceLocation));
+      const savedSite = await getSite();
+      if (!savedSite) throw new Error('The saved plant could not be reloaded.');
+      setSite({ ...INITIAL_SITE, ...savedSite });
       setLocationCheck(result.locationCheck || null);
       setSuccess(result.locationCheck?.status === 'verified' ? 'Location verified.' : '');
     } catch (verifyError) {
@@ -175,6 +197,10 @@ export default function Site() {
       <p className="soft-check-note">Location comes from the browser and is a soft check; browser-reported coordinates can be inaccurate or faked.</p>
       {error && <p className="form-error" role="alert">{error}</p>}
       {success && <p className="success-message" role="status">{success}</p>}
+      <div className="connection-status" role="status" aria-live="polite">
+        <strong>Connection status:</strong>{' '}
+        {connectionStatus === 'checking' ? 'Checking API…' : connectionStatus === 'ok' ? 'OK' : connectionError}
+      </div>
       <div className="card form-card">
         <div className="form-grid">
           <label className="full-width">

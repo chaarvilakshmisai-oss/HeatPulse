@@ -12,6 +12,10 @@ export function score(
   return Math.min(100, base + Math.min(15, 3 * recentTooHotTaps));
 }
 
+export function scoreZone(zone, hourIndex) {
+  return score(zone, hourIndex, zone.exposure, zone.recentTooHotTaps || 0);
+}
+
 export function statusWord(value) {
   if (value >= 65) return 'Too hot';
   if (value >= 40) return 'Warm';

@@ -199,7 +199,7 @@ export async function getReports(limit = 50) {
 }
 
 export async function getHealth() {
-  if (isDemoMode() && !API_BASE_URL) return { ok: true, demo: true };
+  if (isDemoMode() && !API_BASE_URL) return { ok: false, demo: true };
   return request('/health');
 }
 

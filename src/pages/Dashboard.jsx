@@ -6,10 +6,9 @@ import Header from '../components/Header.jsx';
 import KpiCard from '../components/KpiCard.jsx';
 import ShiftPlan from '../components/ShiftPlan.jsx';
 import ZoneGrid from '../components/ZoneGrid.jsx';
-import { HOURLY_CURVE } from '../data/mock.js';
 import { getZones } from '../lib/api.js';
 import { isDemoMode } from '../lib/auth.js';
-import { hourLabel, score } from '../lib/scoring.js';
+import { summarizeDashboard } from '../lib/dashboard.js';
 
 export default function Dashboard() {
   const [zones, setZones] = useState([]);
@@ -20,6 +19,7 @@ export default function Dashboard() {
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState('');
   const [updatedAt, setUpdatedAt] = useState(null);
+  const [hasLoadedData, setHasLoadedData] = useState(false);
 
   const refresh = useCallback(async (initial = false) => {
     if (initial) setLoading(true);
@@ -29,6 +29,7 @@ export default function Dashboard() {
       const result = await getZones();
       if (!Array.isArray(result)) throw new Error('The zones response was not valid.');
       setZones(result);
+      setHasLoadedData(true);
       setUpdatedAt(new Date());
     } catch (requestError) {
       setError(requestError.message || 'Unable to load zones. Please try again.');
@@ -57,17 +58,10 @@ export default function Dashboard() {
     setHourIndex(hour);
   }, []);
 
-  const peakHour = useMemo(() => {
-    if (!zones.length) return 0;
-    const peakScores = HOURLY_CURVE.map((_, hour) =>
-      Math.max(...zones.map((zone) => score(zone, hour, zone.exposure, zone.recentTooHotTaps || 0)))
-    );
-    return peakScores.indexOf(Math.max(...peakScores));
-  }, [zones]);
-
-  const hotZoneCount = zones.filter((zone) => score(zone, hourIndex, zone.exposure, zone.recentTooHotTaps || 0) >= 65).length;
-  const reportsToday = zones.reduce((total, zone) => total + (Number(zone.tapsToday) || 0), 0);
-  const peakRiskHour = hourLabel(peakHour);
+  const { hotZoneCount, reportsToday, peakRiskHour } = useMemo(
+    () => summarizeDashboard(zones, hourIndex),
+    [zones, hourIndex]
+  );
 
   if (loading) return <div className="card page-state" role="status">Loading dashboard…</div>;
 
@@ -81,7 +75,12 @@ export default function Dashboard() {
           showBrand={false}
         />
 
-        {error && <div className="error-panel" role="alert">{error} <button type="button" className="secondary-button" onClick={() => refresh()}>Try again</button></div>}
+        {error && (
+          <div className="error-panel" role="alert">
+            <span>{hasLoadedData ? 'Could not refresh, showing the last data.' : 'Could not load dashboard data.'} {error}</span>
+            <button type="button" className="secondary-button" onClick={() => refresh()}>Try again</button>
+          </div>
+        )}
         <div className="dashboard-toolbar">
           <span className="updated-label">{updatedAt ? `Updated ${updatedAt.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hourCycle: 'h23' })}` : 'Not updated yet'}</span>
           <button type="button" className="secondary-button" onClick={() => refresh()} disabled={refreshing}>

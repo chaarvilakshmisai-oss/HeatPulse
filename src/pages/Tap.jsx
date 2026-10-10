@@ -79,7 +79,12 @@ export default function Tap() {
           }
         }
       } catch (loadError) {
-        if (active) setPageError(loadError.message || 'Unable to load this tap link. Check your connection and try again.');
+        if (!active) return;
+        if (loadError.status === 404) {
+          setPageError('This plant or work area could not be found. Check the QR code or ask your supervisor for a new one.');
+        } else {
+          setPageError(loadError.message || 'Unable to load this tap link. Check your connection and try again.');
+        }
       } finally {
         if (active) setLoading(false);
       }

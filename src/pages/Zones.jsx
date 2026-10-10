@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { getSite, saveSite } from '../lib/api.js';
 import { estimateExposure } from '../lib/exposure.js';
+import { buildSitePayload } from '../lib/sitePayload.js';
 import { validateZone } from '../lib/validation.js';
 
 const SAMPLE_ZONES = [
@@ -182,22 +183,16 @@ export default function Zones() {
     }
     setSaving(true);
     try {
-      const payload = {
-        name: site.name,
-        lat: Number(site.lat),
-        lon: Number(site.lon),
-        radiusM: Number(site.radiusM),
-        requireLocation: site.requireLocation,
-        zones: zones.map(({ localKey: key, ...zone }) => ({
-          ...zone,
-          headcount: Number(zone.headcount),
-          exposure: estimateExposure(zone),
-        })),
-      };
-      const result = await saveSite(payload);
-      const savedSite = result.site || { ...site, zones: payload.zones };
+      const payload = buildSitePayload(site, zones.map((zone) => ({
+        ...zone,
+        headcount: Number(zone.headcount),
+        exposure: estimateExposure(zone),
+      })));
+      await saveSite(payload);
+      const savedSite = await getSite();
+      if (!savedSite) throw new Error('The saved plant could not be reloaded.');
       setSite(savedSite);
-      const savedZones = prepareZones(savedSite.zones || payload.zones);
+      const savedZones = prepareZones(savedSite.zones || []);
       setZones(savedZones);
       setEditingKey(null);
       setDirty(false);

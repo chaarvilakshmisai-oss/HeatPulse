@@ -187,7 +187,7 @@ button {
 
 .zone-grid {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 130px), 1fr));
   gap: 10px;
 }
 
@@ -548,6 +548,7 @@ button {
 .forecast-note { margin: 0; }
 .form-card { display: flex; flex-direction: column; gap: 18px; }
 .soft-check-note { margin: 0; padding: 11px 13px; border-radius: 9px; background: #fff; color: var(--ink); font-size: 13px; }
+.connection-status { padding: 10px 13px; border: 1px solid var(--line); border-radius: 9px; background: #fff; color: var(--ink); font-size: 13px; }
 .site-location-actions { min-height: 38px; color: var(--ink); font-size: 13px; }
 .radius-control input { width: 100%; accent-color: #153E8A; }
 .toggle-row { display: flex; align-items: flex-start; gap: 10px; color: var(--ink); }
@@ -596,7 +597,6 @@ button {
   .dashboard-header { align-items: flex-start; flex-direction: column; }
   .header-meta { justify-content: flex-start; }
   .kpi-grid { grid-template-columns: 1fr; }
-  .zone-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .dashboard-layout { grid-template-columns: minmax(0, 1fr); }
   .tap-page-container { padding: 24px 16px; }
 }

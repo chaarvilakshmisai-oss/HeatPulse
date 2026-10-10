@@ -26,6 +26,7 @@ function isLocationVerified(report) {
     || report.locationVerifiedAt
     || report.locationCheck?.status === 'verified'
     || report.locationCheck?.verified === true
+    || report.verified === true
   );
 }
 
