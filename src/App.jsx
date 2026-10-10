@@ -10,7 +10,6 @@ import Site from './pages/Site.jsx';
 import QrCodes from './pages/QrCodes.jsx';
 import Reports from './pages/Reports.jsx';
 import { AppShell } from './components/AppShell.jsx';
-import SimplePage from './pages/SimplePage.jsx';
 
 export function protectedRouteDecision(user, location) {
   if (user === undefined) return { status: 'loading' };
