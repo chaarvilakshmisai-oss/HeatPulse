@@ -1,35 +1,48 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import { Link } from 'react-router-dom';
 import ActFirst from '../components/ActFirst.jsx';
 import DayBars from '../components/DayBars.jsx';
 import Header from '../components/Header.jsx';
 import KpiCard from '../components/KpiCard.jsx';
 import ShiftPlan from '../components/ShiftPlan.jsx';
-import Sky from '../components/Sky.jsx';
 import ZoneGrid from '../components/ZoneGrid.jsx';
-import { HOURLY_CURVE, MOCK_ZONES } from '../data/mock.js';
+import { HOURLY_CURVE } from '../data/mock.js';
 import { getZones } from '../lib/api.js';
 import { isDemoMode } from '../lib/auth.js';
 import { hourLabel, score } from '../lib/scoring.js';
 
 export default function Dashboard() {
-  const [zones, setZones] = useState(MOCK_ZONES);
+  const [zones, setZones] = useState([]);
   const [hourIndex, setHourIndex] = useState(7);
   const [isPlaying, setIsPlaying] = useState(false);
-  const [isUsingSampleData, setIsUsingSampleData] = useState(true);
+  const [isUsingSampleData] = useState(isDemoMode());
+  const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+  const [error, setError] = useState('');
+  const [updatedAt, setUpdatedAt] = useState(null);
+
+  const refresh = useCallback(async (initial = false) => {
+    if (initial) setLoading(true);
+    setRefreshing(true);
+    setError('');
+    try {
+      const result = await getZones();
+      if (!Array.isArray(result)) throw new Error('The zones response was not valid.');
+      setZones(result);
+      setUpdatedAt(new Date());
+    } catch (requestError) {
+      setError(requestError.message || 'Unable to load zones. Please try again.');
+    } finally {
+      setLoading(false);
+      setRefreshing(false);
+    }
+  }, []);
 
   useEffect(() => {
-    let active = true;
-    getZones().then((result) => {
-      if (!active) return;
-      if (Array.isArray(result) && result.length) setZones(result);
-      setIsUsingSampleData(isDemoMode());
-    }).catch((error) => {
-      console.error('Unable to load zones.', error);
-    });
-    return () => {
-      active = false;
-    };
-  }, []);
+    refresh(true);
+    const timer = window.setInterval(() => refresh(), 30_000);
+    return () => window.clearInterval(timer);
+  }, [refresh]);
 
   useEffect(() => {
     if (!isPlaying) return undefined;
@@ -45,27 +58,45 @@ export default function Dashboard() {
   }, []);
 
   const peakHour = useMemo(() => {
+    if (!zones.length) return 0;
     const peakScores = HOURLY_CURVE.map((_, hour) =>
-      Math.max(...zones.map((zone) => score(zone, hour)))
+      Math.max(...zones.map((zone) => score(zone, hour, zone.exposure, zone.recentTooHotTaps || 0)))
     );
     return peakScores.indexOf(Math.max(...peakScores));
   }, [zones]);
 
-  const hotZoneCount = zones.filter((zone) => score(zone, hourIndex) >= 65).length;
-  const reportsToday = zones.reduce((total, zone) => total + (zone.baseTaps || 0), 0);
+  const hotZoneCount = zones.filter((zone) => score(zone, hourIndex, zone.exposure, zone.recentTooHotTaps || 0) >= 65).length;
+  const reportsToday = zones.reduce((total, zone) => total + (Number(zone.tapsToday) || 0), 0);
   const peakRiskHour = hourLabel(peakHour);
 
+  if (loading) return <div className="card page-state" role="status">Loading dashboard…</div>;
+
   return (
-    <div className="sky-shell">
-      <Sky />
       <main className="dashboard">
         <Header
           hourIndex={hourIndex}
           isPlaying={isPlaying}
           onTogglePlay={() => setIsPlaying((playing) => !playing)}
           isUsingSampleData={isUsingSampleData}
+          showBrand={false}
         />
 
+        {error && <div className="error-panel" role="alert">{error} <button type="button" className="secondary-button" onClick={() => refresh()}>Try again</button></div>}
+        <div className="dashboard-toolbar">
+          <span className="updated-label">{updatedAt ? `Updated ${updatedAt.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hourCycle: 'h23' })}` : 'Not updated yet'}</span>
+          <button type="button" className="secondary-button" onClick={() => refresh()} disabled={refreshing}>
+            {refreshing ? 'Refreshing…' : 'Refresh'}
+          </button>
+        </div>
+
+        {!zones.length ? (
+          <section className="card empty-state">
+            <h1>No zones yet</h1>
+            <p>Add work areas to see their heat-risk guidance.</p>
+            <Link to="/app/zones">Set up zones</Link>
+          </section>
+        ) : (
+        <>
         <section className="kpi-grid" aria-label="Today's heat summary">
           <KpiCard label="Zones too hot" value={`${hotZoneCount} / ${zones.length}`} />
           <KpiCard label="Peak risk" value={peakRiskHour} />
@@ -76,6 +107,7 @@ export default function Dashboard() {
           <section className="card zone-panel">
             <ZoneGrid zones={zones} hourIndex={hourIndex} />
             <DayBars zones={zones} hourIndex={hourIndex} onSelectHour={changeHour} />
+            <p className="forecast-note">Sample forecast curve</p>
           </section>
 
           <aside className="card action-panel">
@@ -84,7 +116,8 @@ export default function Dashboard() {
             <ShiftPlan zones={zones} />
           </aside>
         </div>
+        </>
+        )}
       </main>
-    </div>
   );
 }

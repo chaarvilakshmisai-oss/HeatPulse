@@ -4,13 +4,13 @@ export default function ShiftPlan({ zones }) {
   const safeHours = [];
   const restHours = [];
   const loadingHours = [];
-  const dock = zones.find((zone) => zone.id === 'dock');
+  const outdoorZones = zones.filter((zone) => zone.kind === 'outdoor' || zone.id === 'dock');
 
   for (let hour = 0; hour < 12; hour += 1) {
-    const highestScore = Math.max(...zones.map((zone) => score(zone, hour)));
+    const highestScore = Math.max(...zones.map((zone) => score(zone, hour, zone.exposure, zone.recentTooHotTaps || 0)));
     if (highestScore < 65) safeHours.push(hour);
     else restHours.push(hour);
-    if (dock && score(dock, hour) >= 65) loadingHours.push(hour);
+    if (outdoorZones.some((zone) => score(zone, hour, zone.exposure, zone.recentTooHotTaps || 0) >= 65)) loadingHours.push(hour);
   }
 
   const entries = [

@@ -20,14 +20,9 @@ describe('HeatPulse screens', () => {
     expect(afternoon).toContain('Shift <!-- -->B');
   });
 
-  it('renders the dashboard summary, zones, and shift plan', () => {
+  it('shows a visible dashboard loading state before manager data arrives', () => {
     const html = renderToString(<Dashboard />);
-    expect(html).toContain('HeatPulse');
-    expect(html).toContain('7 / 12');
-    expect(html).toContain('Furnace bay');
-    expect(html).toContain('Act first');
-    expect(html).toContain('Safe for heavy work');
-    expect(html).toContain('Worker reports');
+    expect(html).toContain('Loading dashboard');
   });
 
   it('shows merged work guidance ranges', () => {

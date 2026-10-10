@@ -2,7 +2,7 @@ import { heatColor, hourLabel, score } from '../lib/scoring.js';
 
 export default function DayBars({ zones, hourIndex, onSelectHour }) {
   const values = Array.from({ length: 12 }, (_, index) =>
-    Math.max(...zones.map((zone) => score(zone, index)))
+    Math.max(...zones.map((zone) => score(zone, index, zone.exposure, zone.recentTooHotTaps || 0)))
   );
   const peakHour = values.indexOf(Math.max(...values));
 

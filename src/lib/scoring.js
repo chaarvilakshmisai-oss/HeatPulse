@@ -1,8 +1,13 @@
 import { HOURLY_CURVE } from '../data/mock.js';
 
-export function score(zone, hourIndex, recentTooHotTaps = 0) {
+export function score(
+  zone,
+  hourIndex,
+  exposure = zone.exposure,
+  recentTooHotTaps = zone.recentTooHotTaps || 0
+) {
   const base = Math.round(
-    100 * HOURLY_CURVE[hourIndex] * (0.4 + 0.6 * zone.exposure)
+    100 * HOURLY_CURVE[hourIndex] * (0.4 + 0.6 * exposure)
   );
   return Math.min(100, base + Math.min(15, 3 * recentTooHotTaps));
 }

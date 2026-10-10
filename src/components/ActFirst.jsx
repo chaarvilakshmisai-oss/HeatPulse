@@ -2,7 +2,7 @@ import { actionText, heatColor, score } from '../lib/scoring.js';
 
 export default function ActFirst({ zones, hourIndex }) {
   const rankedZones = [...zones]
-    .map((zone) => ({ zone, value: score(zone, hourIndex) }))
+    .map((zone) => ({ zone, value: score(zone, hourIndex, zone.exposure, zone.recentTooHotTaps || 0) }))
     .sort((a, b) => b.value - a.value)
     .slice(0, 3);
   const topZone = rankedZones[0];

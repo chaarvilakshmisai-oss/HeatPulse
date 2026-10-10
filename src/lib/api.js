@@ -1,4 +1,5 @@
 import { MOCK_ZONES } from '../data/mock.js';
+import { estimateExposure } from './exposure.js';
 import { getIdToken, isDemoMode, signOut } from './auth.js';
 
 const API_BASE = (import.meta.env.VITE_API_URL || '').replace(/\/+$/, '');
@@ -14,9 +15,11 @@ const demoSite = {
   zones: MOCK_ZONES.map((zone) => ({
     id: zone.id,
     name: zone.name,
-    kind: 'indoor',
-    roof: 'metal',
-    ventilation: 'average',
+    kind: zone.id === 'dock' ? 'outdoor' : ['furnace', 'forging', 'welding', 'press'].includes(zone.id)
+      ? 'process'
+      : ['can', 'off'].includes(zone.id) ? 'cooled' : 'indoor',
+    roof: zone.id === 'dock' ? 'open' : ['can', 'off'].includes(zone.id) ? 'concrete' : 'metal',
+    ventilation: ['furnace', 'welding', 'paint', 'wh'].includes(zone.id) ? 'poor' : 'average',
     headcount: 25,
     exposure: zone.exposure,
     tapsToday: zone.baseTaps,
@@ -128,9 +131,20 @@ export async function saveSite(payload) {
       : { status: 'missing' };
     const { deviceLocation, ...site } = payload;
     const movedPlant = payload.lat !== demoSite.lat || payload.lon !== demoSite.lon;
-    Object.assign(demoSite, site, { siteId: DEMO_SITE_ID });
+    const previousZones = new Map(demoSite.zones.map((zone) => [zone.id, zone]));
+    const zones = (payload.zones || demoSite.zones).map((zone, index) => {
+      const previous = previousZones.get(zone.id);
+      return {
+        ...zone,
+        id: zone.id || `demo-zone-${Date.now()}-${index}`,
+        exposure: Number.isFinite(zone.exposure) ? zone.exposure : estimateExposure(zone),
+        tapsToday: previous?.tapsToday ?? zone.tapsToday ?? 0,
+        recentTooHotTaps: previous?.recentTooHotTaps ?? zone.recentTooHotTaps ?? 0,
+      };
+    });
+    Object.assign(demoSite, site, { zones, siteId: DEMO_SITE_ID });
     if (locationCheck.status === 'verified') demoSite.locationVerifiedAt = locationCheck.verifiedAt;
-    else if (movedPlant || locationCheck.status === 'missing') demoSite.locationVerifiedAt = null;
+    else if (movedPlant) demoSite.locationVerifiedAt = null;
     return { site: structuredClone(demoSite), locationCheck };
   }
   return request('/site', { method: 'PUT', body: JSON.stringify(payload) }, true);

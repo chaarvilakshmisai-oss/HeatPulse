@@ -1,15 +1,15 @@
 import { hourLabel } from '../lib/scoring.js';
 
-export default function Header({ hourIndex, isPlaying, onTogglePlay, isUsingSampleData }) {
+export default function Header({ hourIndex, isPlaying, onTogglePlay, isUsingSampleData, showBrand = true }) {
   return (
     <header className="dashboard-header">
-      <div className="brand">
+      {showBrand && <div className="brand">
         <h1>HeatPulse</h1>
         <span>for Industry</span>
-      </div>
+      </div>}
       <div className="header-meta">
         <span className="header-context">
-          Sample Plant · Unit 2 · {hourLabel(hourIndex)} · Shift {hourIndex < 7 ? 'A' : 'B'}
+          Heat forecast · {hourLabel(hourIndex)} · Shift {hourIndex < 7 ? 'A' : 'B'}
         </span>
         <button
           className="play-button"
