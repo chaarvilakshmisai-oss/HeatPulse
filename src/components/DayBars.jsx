@@ -1,44 +1,35 @@
-import React from 'react';
-import { heatColor, formatHour } from '../lib/scoring.js';
+import { heatColor, hourLabel, score } from '../lib/scoring.js';
 
-export default function DayBars({ currentHourIndex, getPeakScoreForHour, onSelectHour }) {
-  const hours = Array.from({ length: 12 }, (_, i) => i);
+export default function DayBars({ zones, hourIndex, onSelectHour }) {
+  const values = Array.from({ length: 12 }, (_, index) =>
+    Math.max(...zones.map((zone) => score(zone, index)))
+  );
+  const peakHour = values.indexOf(Math.max(...values));
 
   return (
-    <div className="day-bars-container" role="region" aria-label="Daily heat timeline">
-      <div className="day-bars-track">
-        {hours.map(hourIndex => {
-          const peakScore = getPeakScoreForHour(hourIndex);
-          const heightPercent = Math.max(6, peakScore);
-          const bg = heatColor(peakScore);
-          const isCurrent = hourIndex === currentHourIndex;
-
-          return (
-            <button
-              key={hourIndex}
-              type="button"
-              className={`day-bar ${isCurrent ? 'current' : ''}`}
-              style={{
-                height: `${heightPercent}%`,
-                backgroundColor: bg,
-              }}
-              onClick={() => onSelectHour(hourIndex)}
-              aria-label={`${formatHour(hourIndex)}: Peak score ${peakScore}`}
-              title={`${formatHour(hourIndex)} - Max score: ${peakScore}`}
-            >
-              <span className="sr-only">
-                {formatHour(hourIndex)} score {peakScore}
-              </span>
-            </button>
-          );
-        })}
+    <section className="day-bars">
+      <h2 className="eyebrow">Highest zone score through the day</h2>
+      <div className="bar-track">
+        {values.map((value, index) => (
+          <button
+            key={index}
+            type="button"
+            className={`day-bar${index === hourIndex ? ' selected' : ''}`}
+            style={{
+              height: `${Math.max(6, value)}%`,
+              backgroundColor: heatColor(value),
+            }}
+            onClick={() => onSelectHour(index)}
+            aria-label={`${hourLabel(index)}, highest score ${value}`}
+            aria-pressed={index === hourIndex}
+          />
+        ))}
       </div>
-
-      <div className="day-bars-labels" aria-hidden="true">
-        <span className="label-start">7 AM</span>
-        <span className="label-peak">Peak around 2 PM</span>
-        <span className="label-end">6 PM</span>
+      <div className="bar-labels">
+        <span>7 AM</span>
+        <span>Peak around {hourLabel(peakHour)}</span>
+        <span>6 PM</span>
       </div>
-    </div>
+    </section>
   );
 }

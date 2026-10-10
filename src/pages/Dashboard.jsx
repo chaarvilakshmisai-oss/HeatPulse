@@ -1,189 +1,87 @@
-import React, { useState, useEffect, useCallback } from 'react';
-import TimeControl from '../components/TimeControl.jsx';
-import RoomGrid from '../components/RoomGrid.jsx';
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import ActFirst from '../components/ActFirst.jsx';
 import DayBars from '../components/DayBars.jsx';
-import Summary from '../components/Summary.jsx';
-import FixToggles from '../components/FixToggles.jsx';
-import RoomCard from '../components/RoomCard.jsx';
-import FixFirst from '../components/FixFirst.jsx';
-import { MOCK_ROOMS, HOURLY_CURVE, FIXES } from '../data/mock.js';
-import { score as calculateScore, calculateTotalReduction } from '../lib/scoring.js';
+import Header from '../components/Header.jsx';
+import KpiCard from '../components/KpiCard.jsx';
+import ShiftPlan from '../components/ShiftPlan.jsx';
+import Sky from '../components/Sky.jsx';
+import ZoneGrid from '../components/ZoneGrid.jsx';
+import { HOURLY_CURVE, MOCK_ZONES } from '../data/mock.js';
 import { getZones } from '../lib/api.js';
+import { hourLabel, score } from '../lib/scoring.js';
 
 export default function Dashboard() {
-  const [rooms, setRooms] = useState(MOCK_ROOMS);
-  const [isLoading, setIsLoading] = useState(true);
-  const [isUsingSampleData, setIsUsingSampleData] = useState(false);
-  const [apiErrorReason, setApiErrorReason] = useState(null);
-
-  const [hourIndex, setHourIndex] = useState(7); // Initial state: 2 PM (index 7)
-  const [selectedRoomId, setSelectedRoomId] = useState(301); // Initial state: room 301
+  const [zones, setZones] = useState(MOCK_ZONES);
+  const [hourIndex, setHourIndex] = useState(7);
   const [isPlaying, setIsPlaying] = useState(false);
-  const [activeFixes, setActiveFixes] = useState([]); // Initial state: no fixes
-  const [simulatedTaps, setSimulatedTaps] = useState({});
+  const [isUsingSampleData, setIsUsingSampleData] = useState(true);
 
-  // Fetch zones on mount with API layer fallback
   useEffect(() => {
-    let isMounted = true;
-    async function loadData() {
-      setIsLoading(true);
-      const res = await getZones();
-      if (isMounted) {
-        if (res.rooms && res.rooms.length > 0) {
-          setRooms(res.rooms);
-        }
-        setIsUsingSampleData(res.isUsingSampleData);
-        setApiErrorReason(res.reason || null);
-        setIsLoading(false);
-      }
-    }
-    loadData();
+    let active = true;
+    getZones().then((result) => {
+      if (!active) return;
+      if (Array.isArray(result.zones) && result.zones.length) setZones(result.zones);
+      setIsUsingSampleData(result.isUsingSampleData);
+    });
     return () => {
-      isMounted = false;
+      active = false;
     };
   }, []);
 
-  // Playback timer effect: advances one hour every 800 ms and loops
   useEffect(() => {
-    let timer = null;
-    if (isPlaying) {
-      timer = setInterval(() => {
-        setHourIndex(prev => (prev + 1) % 12);
-      }, 800);
-    }
-    return () => {
-      if (timer) clearInterval(timer);
-    };
+    if (!isPlaying) return undefined;
+    const timer = window.setInterval(() => {
+      setHourIndex((hour) => (hour + 1) % HOURLY_CURVE.length);
+    }, 800);
+    return () => window.clearInterval(timer);
   }, [isPlaying]);
 
-  // Handler when user changes hour via slider or bar click -> stops playback
-  const handleHourChange = useCallback((newHour) => {
+  const changeHour = useCallback((hour) => {
     setIsPlaying(false);
-    setHourIndex(newHour);
+    setHourIndex(hour);
   }, []);
 
-  const handleTogglePlay = useCallback(() => {
-    setIsPlaying(prev => !prev);
-  }, []);
+  const peakHour = useMemo(() => {
+    const peakScores = HOURLY_CURVE.map((_, hour) =>
+      Math.max(...zones.map((zone) => score(zone, hour)))
+    );
+    return peakScores.indexOf(Math.max(...peakScores));
+  }, [zones]);
 
-  // Compute room score given hour and room
-  const getRoomScore = useCallback((room, targetHour = hourIndex, fixes = activeFixes) => {
-    const curveVal = HOURLY_CURVE[targetHour];
-    const reduction = calculateTotalReduction(room.id, fixes, FIXES);
-    const taps = simulatedTaps[room.id] || 0;
-    return calculateScore(curveVal, room.exposure, reduction, taps);
-  }, [hourIndex, activeFixes, simulatedTaps]);
-
-  // Peak score across all rooms at a given hour
-  const getPeakScoreForHour = useCallback((targetHour) => {
-    let max = 0;
-    for (const room of rooms) {
-      const s = getRoomScore(room, targetHour);
-      if (s > max) max = s;
-    }
-    return max;
-  }, [getRoomScore, rooms]);
-
-  // Toggle What-If fixes
-  const handleToggleFix = useCallback((fixId) => {
-    setActiveFixes(prev => {
-      if (prev.includes(fixId)) {
-        return prev.filter(id => id !== fixId);
-      } else {
-        return [...prev, fixId];
-      }
-    });
-  }, []);
-
-  // Simulate resident tap
-  const handleAddTap = useCallback((roomId) => {
-    setSimulatedTaps(prev => ({
-      ...prev,
-      [roomId]: (prev[roomId] || 0) + 1
-    }));
-  }, []);
-
-  // Summary counts: hot rooms (score >= 65) with current fixes vs with no fixes
-  const hotRoomsCount = rooms.filter(room => getRoomScore(room) >= 65).length;
-  const baseHotRoomsCount = rooms.filter(room => getRoomScore(room, hourIndex, []) >= 65).length;
-
-  const selectedRoom = rooms.find(r => r.id === selectedRoomId) || rooms[0] || MOCK_ROOMS[0];
-  const selectedRoomScore = getRoomScore(selectedRoom);
+  const hotZoneCount = zones.filter((zone) => score(zone, hourIndex) >= 65).length;
+  const reportsToday = zones.reduce((total, zone) => total + (zone.baseTaps || 0), 0);
+  const peakRiskHour = hourLabel(peakHour);
 
   return (
-    <div className="dashboard-container">
-      <header className="dashboard-header">
-        <div className="header-brand">
-          <h1 className="wordmark">HeatPulse</h1>
-          <span className="subtitle">Hostel Block C · Floor 3</span>
-        </div>
-        <div className="header-chips">
-          {isUsingSampleData && (
-            <span className="chip alert-chip" title={apiErrorReason || "API not connected"}>
-              ⚠️ Using sample data
-            </span>
-          )}
-          <span className="chip">Forecast 38°C · humidity 55%</span>
-        </div>
-      </header>
+    <div className="sky-shell">
+      <Sky />
+      <main className="dashboard">
+        <Header
+          hourIndex={hourIndex}
+          isPlaying={isPlaying}
+          onTogglePlay={() => setIsPlaying((playing) => !playing)}
+          isUsingSampleData={isUsingSampleData}
+        />
 
-      {isLoading ? (
-        <div className="loading-state panel" aria-live="polite">
-          <div className="spinner" aria-hidden="true"></div>
-          <p>Loading hostel heat map zones...</p>
-        </div>
-      ) : (
-        <main className="dashboard-main">
-          <section className="left-panel panel">
-            <TimeControl
-              hourIndex={hourIndex}
-              onChangeHour={handleHourChange}
-              isPlaying={isPlaying}
-              onTogglePlay={handleTogglePlay}
-            />
+        <section className="kpi-grid" aria-label="Today's heat summary">
+          <KpiCard label="Zones too hot" value={`${hotZoneCount} / ${zones.length}`} />
+          <KpiCard label="Peak risk" value={peakRiskHour} />
+          <KpiCard label="Worker reports" value={reportsToday} />
+        </section>
 
-            <RoomGrid
-              rooms={rooms}
-              getRoomScore={getRoomScore}
-              selectedRoomId={selectedRoomId}
-              onSelectRoom={setSelectedRoomId}
-            />
-
-            <DayBars
-              currentHourIndex={hourIndex}
-              getPeakScoreForHour={getPeakScoreForHour}
-              onSelectHour={handleHourChange}
-            />
+        <div className="dashboard-layout">
+          <section className="card zone-panel">
+            <ZoneGrid zones={zones} hourIndex={hourIndex} />
+            <DayBars zones={zones} hourIndex={hourIndex} onSelectHour={changeHour} />
           </section>
 
-          <section className="right-column-stack">
-            <Summary
-              hourIndex={hourIndex}
-              hotRoomsCount={hotRoomsCount}
-              baseHotRoomsCount={baseHotRoomsCount}
-              hasActiveFixes={activeFixes.length > 0}
-            />
-
-            <FixToggles
-              activeFixes={activeFixes}
-              onToggleFix={handleToggleFix}
-            />
-
-            <RoomCard
-              room={selectedRoom}
-              score={selectedRoomScore}
-              simulatedTaps={simulatedTaps[selectedRoomId] || 0}
-              onAddTap={handleAddTap}
-            />
-
-            <FixFirst
-              rooms={rooms}
-              getRoomScore={getRoomScore}
-              onSelectRoom={setSelectedRoomId}
-            />
-          </section>
-        </main>
-      )}
+          <aside className="card action-panel">
+            <ActFirst zones={zones} hourIndex={hourIndex} />
+            <div className="divider" />
+            <ShiftPlan zones={zones} />
+          </aside>
+        </div>
+      </main>
     </div>
   );
 }
