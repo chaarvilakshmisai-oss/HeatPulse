@@ -8,7 +8,9 @@
     "build": "vite build",
     "preview": "vite preview",
     "test": "vitest run",
-    "verify:production": "node scripts/check-production.mjs"
+    "verify:production": "node scripts/check-production.mjs",
+    "smoke": "bash scripts/smoke.sh",
+    "seed": "node scripts/seed-taps.mjs"
   },
   "dependencies": {
     "amazon-cognito-identity-js": "^6.3.20",
