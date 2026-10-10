@@ -7,6 +7,7 @@ import Login from './pages/Login.jsx';
 import Tap from './pages/Tap.jsx';
 import Zones from './pages/Zones.jsx';
 import Site from './pages/Site.jsx';
+import QrCodes from './pages/QrCodes.jsx';
 import { AppShell } from './components/AppShell.jsx';
 import SimplePage from './pages/SimplePage.jsx';
 
@@ -70,7 +71,7 @@ function ManagerRoutes() {
           <Route path="dashboard" element={<Dashboard />} />
           <Route path="zones" element={<Zones />} />
           <Route path="site" element={<Site />} />
-          <Route path="qr" element={<SimplePage title="QR codes" />} />
+          <Route path="qr" element={<QrCodes />} />
           <Route path="reports" element={<SimplePage title="Reports" />} />
         </Route>
       </Route>

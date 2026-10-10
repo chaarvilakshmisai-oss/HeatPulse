@@ -71,7 +71,7 @@ export default function Login() {
             </button>
           </form>
           <p className="login-footer">Accounts are created by your plant admin.</p>
-          <Link className="login-worker-link" to="/tap?site=sample-site">Worker tap</Link>
+          <Link className="login-worker-link" to="/tap?site=sample-site&zone=furnace">Worker tap</Link>
         </section>
       </main>
     </div>

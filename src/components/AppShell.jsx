@@ -20,7 +20,7 @@ export function AppShell({ user, children }) {
   useEffect(() => {
     let active = true;
     getSite().then((site) => {
-      if (active && site) setSiteName(site.name);
+      if (active) setSiteName(site?.name || 'Set up your plant');
     }).catch(() => {
       if (active) setSiteName('Plant unavailable');
     });

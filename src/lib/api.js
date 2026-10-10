@@ -38,10 +38,11 @@ function distanceBetween(lat1, lon1, lat2, lon2) {
 }
 
 export class ApiError extends Error {
-  constructor(message, status) {
+  constructor(message, status, code) {
     super(message);
     this.name = 'ApiError';
     this.status = status;
+    this.code = code;
   }
 }
 
@@ -62,14 +63,16 @@ async function request(path, options = {}, manager = false) {
   }
   if (!response.ok) {
     let message = `Request failed (${response.status}). Please try again.`;
+    let code;
     try {
       const payload = await response.json();
       if (payload.message) message = payload.message;
       else if (payload.error) message = payload.error;
+      code = payload.code || (typeof payload.error === 'string' ? payload.error : undefined);
     } catch {
       // Use the status-based message when the response has no JSON body.
     }
-    throw new ApiError(message, response.status);
+    throw new ApiError(message, response.status, code);
   }
   if (response.status === 204) return null;
   return response.json();
@@ -87,22 +90,28 @@ export async function getPublicSite(siteId) {
   return request(`/public/sites/${encodeURIComponent(siteId)}`);
 }
 
-export async function sendReport(report, legacyLevel) {
-  const payload = typeof report === 'string'
-    ? { siteId: DEMO_SITE_ID, zoneId: report, level: legacyLevel }
-    : report;
+export async function sendReport(payload) {
   if (isDemoMode()) {
+    if (payload.siteId !== DEMO_SITE_ID) throw new ApiError('This plant could not be found.', 404);
+    const zone = demoSite.zones.find((item) => item.id === payload.zoneId);
+    if (!zone) throw new ApiError('This work area could not be found.', 404);
+    if (demoSite.requireLocation) {
+      if (!Number.isFinite(payload.lat) || !Number.isFinite(payload.lon)) {
+        throw new ApiError('Workers must allow location access on their phones.', 403, 'location_required');
+      }
+      const distanceM = distanceBetween(demoSite.lat, demoSite.lon, payload.lat, payload.lon);
+      if (distanceM > demoSite.radiusM) {
+        throw new ApiError('You appear to be outside the plant area.', 403, 'outside_area');
+      }
+    }
     const entry = {
       ...payload,
       createdAt: new Date().toISOString(),
       locationVerified: Number.isFinite(payload.lat) && Number.isFinite(payload.lon),
     };
     demoReports.unshift(entry);
-    const zone = demoSite.zones.find((item) => item.id === payload.zoneId);
-    if (zone) {
-      zone.tapsToday += 1;
-      if (payload.level === 3) zone.recentTooHotTaps += 1;
-    }
+    zone.tapsToday += 1;
+    if (payload.level === 3) zone.recentTooHotTaps += 1;
     return { success: true, mocked: true };
   }
   return request('/report', { method: 'POST', body: JSON.stringify(payload) });

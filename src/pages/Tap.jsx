@@ -1,7 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import { MOCK_ZONES } from '../data/mock.js';
-import { getZones, sendReport } from '../lib/api.js';
+import { getPublicSite, sendReport } from '../lib/api.js';
 import { isDemoMode } from '../lib/auth.js';
 import Sky from '../components/Sky.jsx';
 
@@ -11,50 +10,133 @@ const OPTIONS = [
   { level: 3, word: 'Too hot', description: 'Hard to keep working', color: '#F2603E' },
 ];
 
+function readPosition() {
+  return new Promise((resolve, reject) => {
+    if (!navigator.geolocation) {
+      reject(new Error('Location is unavailable. Allow location access in your browser and try again.'));
+      return;
+    }
+    navigator.geolocation.getCurrentPosition(resolve, (error) => {
+      const message = error.code === 1
+        ? 'Allow location access in your browser settings, then try again.'
+        : 'Your location could not be read. Check your browser settings and try again.';
+      reject(new Error(message));
+    }, { enableHighAccuracy: true, timeout: 10_000, maximumAge: 0 });
+  });
+}
+
 export default function Tap() {
   const [searchParams] = useSearchParams();
-  const zoneId = searchParams.get('zone') || 'furnace';
-  const [zones, setZones] = useState(MOCK_ZONES);
-  const [isUsingSampleData, setIsUsingSampleData] = useState(true);
-  const [error, setError] = useState('');
-  const zone = zones.find((item) => item.id === zoneId);
-  const zoneName = zone?.name || zoneId;
+  const siteId = searchParams.get('site') || '';
+  const zoneId = searchParams.get('zone') || '';
+  const [loading, setLoading] = useState(true);
+  const [site, setSite] = useState(null);
+  const [zone, setZone] = useState(null);
+  const [position, setPosition] = useState(null);
+  const [locationStatus, setLocationStatus] = useState('idle');
+  const [locationError, setLocationError] = useState('');
+  const [pageError, setPageError] = useState('');
+  const [sendError, setSendError] = useState('');
   const [selectedLevel, setSelectedLevel] = useState(null);
-  const [isSubmitted, setIsSubmitted] = useState(false);
-  const [isSending, setIsSending] = useState(false);
+  const [sending, setSending] = useState(false);
+  const [submitted, setSubmitted] = useState(false);
   const selectedOption = OPTIONS.find((option) => option.level === selectedLevel);
 
   useEffect(() => {
     let active = true;
-    getZones().then((result) => {
-      if (!active) return;
-      if (Array.isArray(result) && result.length) setZones(result);
-      setIsUsingSampleData(isDemoMode());
-    });
+    async function load() {
+      if (!siteId || !zoneId) {
+        setPageError('This tap link is missing a plant or work area. Please ask your supervisor for a new QR code.');
+        setLoading(false);
+        return;
+      }
+      try {
+        const publicSite = await getPublicSite(siteId);
+        const publicZone = publicSite.zones?.find((item) => item.id === zoneId);
+        if (!publicZone) throw new Error('This work area could not be found. Please ask your supervisor for a new QR code.');
+        if (!active) return;
+        setSite(publicSite);
+        setZone(publicZone);
+        if (publicSite.requireLocation) {
+          setLocationStatus('checking');
+          setLoading(false);
+          try {
+            const devicePosition = await readPosition();
+            if (active) {
+              setPosition({
+                lat: devicePosition.coords.latitude,
+                lon: devicePosition.coords.longitude,
+                accuracy: devicePosition.coords.accuracy,
+              });
+              setLocationStatus('confirmed');
+              setLocationError('');
+            }
+          } catch (geoError) {
+            if (active) {
+              setLocationStatus('error');
+              setLocationError(geoError.message);
+            }
+          }
+        }
+      } catch (loadError) {
+        if (active) setPageError(loadError.message || 'Unable to load this tap link. Check your connection and try again.');
+      } finally {
+        if (active) setLoading(false);
+      }
+    }
+    load();
     return () => {
       active = false;
     };
-  }, []);
+  }, [siteId, zoneId]);
 
-  async function handleSend() {
-    if (!selectedLevel || isSending) return;
-    setIsSending(true);
-    setError('');
+  async function retryLocation() {
+    setLocationStatus('checking');
+    setLocationError('');
     try {
-      const result = await sendReport(zoneId, selectedLevel);
-      if (result.mocked) setIsUsingSampleData(true);
-      setIsSubmitted(true);
-    } catch (requestError) {
-      console.error('Unable to record worker tap.', requestError);
-      setError('Your tap could not be recorded. Please try again.');
-    } finally {
-      setIsSending(false);
+      const devicePosition = await readPosition();
+      setPosition({
+        lat: devicePosition.coords.latitude,
+        lon: devicePosition.coords.longitude,
+        accuracy: devicePosition.coords.accuracy,
+      });
+      setLocationStatus('confirmed');
+    } catch (geoError) {
+      setLocationStatus('error');
+      setLocationError(geoError.message);
     }
   }
 
-  function resetTap() {
+  async function submitTap() {
+    if (!selectedLevel || sending || (site?.requireLocation && !position)) return;
+    setSending(true);
+    setSendError('');
+    try {
+      await sendReport({
+        siteId,
+        zoneId,
+        level: selectedLevel,
+        ...(position ? { lat: position.lat, lon: position.lon, accuracy: position.accuracy } : {}),
+      });
+      setSubmitted(true);
+    } catch (error) {
+      const code = error.code || error.message;
+      if (error.status === 403 && String(code).includes('outside_area')) {
+        setSendError('You appear to be outside the plant area. Move closer and try again.');
+      } else if (error.status === 403 && String(code).includes('location_required')) {
+        setSendError('Please allow location access on your phone, then try again.');
+      } else {
+        setSendError(error.message || 'Your tap could not be recorded. Please try again.');
+      }
+    } finally {
+      setSending(false);
+    }
+  }
+
+  function tapAgain() {
     setSelectedLevel(null);
-    setIsSubmitted(false);
+    setSubmitted(false);
+    setSendError('');
   }
 
   return (
@@ -66,55 +148,68 @@ export default function Tap() {
             <h1>HeatPulse</h1>
             <span>for Industry</span>
           </div>
-          <p className="tap-subtitle">Sample Plant · {zoneName}</p>
-          {isUsingSampleData && <p className="sample-note">Sample data in use</p>}
+          {site && zone && <p className="tap-subtitle">{site.name} · {zone.name}</p>}
+          {isDemoMode() && <p className="demo-banner" role="status">Demo mode: sample data, no real sign-in</p>}
         </header>
 
-        <section className="card tap-main">
-          {isSubmitted ? (
-            <div className="tap-success-view" aria-live="polite">
-              <h2 className="tap-success-title">Thanks, recorded.</h2>
-              <p className="tap-success-msg">
-                You reported &quot;{selectedOption?.word}&quot; for {zoneName}.
-              </p>
-              <button className="tap-again-btn" type="button" onClick={resetTap}>
-                Tap again
-              </button>
-            </div>
-          ) : (
-            <>
-              <h2 className="tap-question">How does it feel right now?</h2>
-              <div className="tap-options">
-                {OPTIONS.map((option) => (
-                  <button
-                    key={option.level}
-                    className={`tap-option-btn${selectedLevel === option.level ? ' selected' : ''}`}
-                    style={{ backgroundColor: option.color }}
-                    type="button"
-                    aria-pressed={selectedLevel === option.level}
-                    onClick={() => setSelectedLevel(option.level)}
-                  >
-                    <span className="tap-word">{option.word}</span>
-                    <span className="tap-desc">{option.description}</span>
-                  </button>
-                ))}
+        {loading ? (
+          <section className="card tap-main" role="status">Loading this work area…</section>
+        ) : pageError ? (
+          <section className="card tap-main">
+            <p className="tap-error" role="alert">{pageError}</p>
+          </section>
+        ) : submitted ? (
+          <section className="card tap-main tap-success-view" aria-live="polite">
+            <h2 className="tap-success-title">Thanks, recorded.</h2>
+            <p className="tap-success-msg">You reported &quot;{selectedOption?.word}&quot; for {zone?.name}.</p>
+            <button className="secondary-button" type="button" onClick={tapAgain}>Tap again</button>
+          </section>
+        ) : (
+          <section className="card tap-main">
+            <h2 className="tap-question">How does it feel right now?</h2>
+            {site?.requireLocation && (
+              <div className="tap-location-status" aria-live="polite">
+                {locationStatus === 'checking' && <p role="status">Checking your location…</p>}
+                {locationStatus === 'confirmed' && <p className="status-good" role="status">Location confirmed</p>}
+                {locationStatus === 'error' && (
+                  <div>
+                    <p className="tap-error" role="alert">{locationError}</p>
+                    <button type="button" className="secondary-button" onClick={retryLocation}>Try location again</button>
+                  </div>
+                )}
+                <p className="location-privacy">Your location is used once to confirm you are at the plant. It is not stored.</p>
               </div>
-              <button
-                className="send-tap-btn"
-                type="button"
-                disabled={!selectedLevel || isSending}
-                onClick={handleSend}
-              >
-                {isSending ? 'Sending…' : 'Send my tap'}
-              </button>
-              {error && <p className="tap-error" role="alert">{error}</p>}
-            </>
-          )}
-        </section>
-
-        <footer className="tap-footer">
-          Anonymous. Your tap helps supervisors decide where to act first.
-        </footer>
+            )}
+            <div className="tap-options">
+              {OPTIONS.map((option) => (
+                <button
+                  key={option.level}
+                  className={`tap-option-btn${selectedLevel === option.level ? ' selected' : ''}`}
+                  style={{ backgroundColor: option.color }}
+                  type="button"
+                  aria-pressed={selectedLevel === option.level}
+                  onClick={() => {
+                    setSelectedLevel(option.level);
+                    setSendError('');
+                  }}
+                >
+                  <span className="tap-word">{option.word}</span>
+                  <span className="tap-desc">{option.description}</span>
+                </button>
+              ))}
+            </div>
+            <button
+              className="primary-button send-tap-btn"
+              type="button"
+              disabled={!selectedLevel || sending || (site?.requireLocation && !position)}
+              onClick={submitTap}
+            >
+              {sending ? 'Sending…' : 'Send my tap'}
+            </button>
+            {sendError && <p className="tap-error" role="alert">{sendError}</p>}
+          </section>
+        )}
+        <footer className="tap-footer">Anonymous. Your tap helps supervisors decide where to act first.</footer>
       </main>
     </div>
   );
