@@ -8,6 +8,7 @@ import Sky from '../components/Sky.jsx';
 import ZoneGrid from '../components/ZoneGrid.jsx';
 import { HOURLY_CURVE, MOCK_ZONES } from '../data/mock.js';
 import { getZones } from '../lib/api.js';
+import { isDemoMode } from '../lib/auth.js';
 import { hourLabel, score } from '../lib/scoring.js';
 
 export default function Dashboard() {
@@ -20,8 +21,10 @@ export default function Dashboard() {
     let active = true;
     getZones().then((result) => {
       if (!active) return;
-      if (Array.isArray(result.zones) && result.zones.length) setZones(result.zones);
-      setIsUsingSampleData(result.isUsingSampleData);
+      if (Array.isArray(result) && result.length) setZones(result);
+      setIsUsingSampleData(isDemoMode());
+    }).catch((error) => {
+      console.error('Unable to load zones.', error);
     });
     return () => {
       active = false;

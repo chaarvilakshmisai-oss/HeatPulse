@@ -1,6 +1,6 @@
 :root {
   font-family: 'IBM Plex Sans', sans-serif;
-  color: #0F1B33;
+  color: #0B0F14;
   background: #F5F7FB;
   font-synthesis: none;
   text-rendering: optimizeLegibility;
@@ -32,7 +32,7 @@ button {
   cursor: pointer;
 }
 
-button:focus-visible {
+:focus-visible {
   outline: 2px solid #FF9900;
   outline-offset: 2px;
 }
@@ -360,12 +360,154 @@ button:focus-visible {
 .tap-footer { color: var(--ink); font-size: 12px; text-align: center; }
 .tap-error { margin: 0; color: #C0243A; font-size: 13px; text-align: center; }
 
+.app-shell {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  width: min(100%, 1240px);
+  margin: 0 auto;
+  padding: 18px 24px 30px;
+}
+
+.app-topbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  min-height: 72px;
+}
+
+.app-brand, .app-user {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.app-brand > div { display: flex; flex-direction: column; gap: 3px; }
+.app-brand strong { color: var(--ink); font-size: 16px; }
+.app-site-name, .app-user { color: var(--ink); font-size: 13px; }
+
+.logo-mark {
+  display: grid;
+  width: 38px;
+  height: 38px;
+  place-items: center;
+  border-radius: 10px;
+  background: var(--navy);
+  color: #fff;
+  font-weight: 600;
+}
+
+.secondary-button {
+  min-height: 36px;
+  padding: 7px 12px;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  background: #fff;
+  color: var(--ink);
+}
+
+.primary-button {
+  min-height: 42px;
+  padding: 10px 16px;
+  border: 0;
+  border-radius: 10px;
+  background: #FF9900;
+  color: #0B0F14;
+  font-weight: 600;
+}
+
+.primary-button:disabled { opacity: .65; cursor: wait; }
+
+.demo-banner {
+  margin: 0;
+  padding: 9px 12px;
+  border: 1px solid #153E8A;
+  border-radius: 10px;
+  background: #fff;
+  color: #0B0F14;
+  font-size: 13px;
+}
+
+.setup-banner {
+  margin: 0 0 12px;
+  padding: 12px 14px;
+  border: 1px solid #153E8A;
+  border-radius: 10px;
+  background: #fff;
+  color: var(--ink);
+  font-weight: 600;
+}
+
+.app-body {
+  display: grid;
+  grid-template-columns: 205px minmax(0, 1fr);
+  align-items: start;
+  gap: 16px;
+}
+
+.sidebar {
+  position: sticky;
+  top: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  padding: 10px;
+}
+
+.nav-item {
+  display: block;
+  padding: 10px 12px;
+  border-radius: 9px;
+  color: var(--ink);
+  font-size: 14px;
+  font-weight: 500;
+  text-decoration: none;
+}
+
+.nav-item.active {
+  background: #153E8A;
+  color: #fff;
+}
+
+.app-content { min-width: 0; }
+.route-loading { width: min(100% - 32px, 700px); margin: 40px auto; padding: 20px; color: var(--ink); text-align: center; }
+
+.login-wrap {
+  display: grid;
+  min-height: 100vh;
+  place-items: center;
+  padding: 24px 16px;
+}
+
+.login-card { width: min(100%, 430px); padding: 28px; }
+.login-brand { display: flex; align-items: center; gap: 11px; color: var(--ink); font-weight: 600; }
+.login-card h1 { margin: 24px 0 16px; color: var(--ink); font-size: 24px; }
+.login-card form { display: flex; flex-direction: column; gap: 10px; }
+.login-card form > label:not(.show-password) { margin-top: 5px; color: var(--ink); font-size: 13px; font-weight: 500; }
+.login-card input:not([type="checkbox"]) { width: 100%; min-height: 42px; padding: 9px 11px; border: 1px solid #94A3B8; border-radius: 8px; color: var(--ink); background: #fff; }
+.show-password { display: flex; align-items: center; gap: 8px; color: var(--ink); font-size: 13px; }
+.login-submit { margin-top: 6px; }
+.login-footer { margin: 20px 0 0; color: var(--ink); font-size: 12px; text-align: center; }
+.login-worker-link { display: block; margin-top: 12px; color: var(--navy); font-size: 13px; text-align: center; }
+.form-error { margin: 0 0 12px; color: #C0243A; font-size: 13px; }
+.page-placeholder { min-height: 220px; }
+.page-placeholder h1 { margin: 4px 0 8px; color: var(--ink); }
+.page-placeholder p { color: var(--ink); }
+
 @media (max-width: 900px) {
   .dashboard-layout { grid-template-columns: 1fr; }
+  .app-body { grid-template-columns: minmax(0, 1fr); gap: 12px; }
+  .sidebar { position: static; flex-direction: row; overflow-x: auto; white-space: nowrap; }
 }
 
 @media (max-width: 560px) {
   .dashboard { padding: 20px 16px; }
+  .app-shell { padding: 12px; }
+  .app-topbar { align-items: flex-start; flex-direction: column; }
+  .app-user { width: 100%; justify-content: space-between; }
+  .login-card { padding: 22px; }
   .dashboard-header { align-items: flex-start; flex-direction: column; }
   .header-meta { justify-content: flex-start; }
   .kpi-grid { grid-template-columns: 1fr; }

@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { MOCK_ZONES } from '../data/mock.js';
 import { getZones, sendReport } from '../lib/api.js';
+import { isDemoMode } from '../lib/auth.js';
 import Sky from '../components/Sky.jsx';
 
 const OPTIONS = [
@@ -27,8 +28,8 @@ export default function Tap() {
     let active = true;
     getZones().then((result) => {
       if (!active) return;
-      if (Array.isArray(result.zones) && result.zones.length) setZones(result.zones);
-      setIsUsingSampleData(result.isUsingSampleData);
+      if (Array.isArray(result) && result.length) setZones(result);
+      setIsUsingSampleData(isDemoMode());
     });
     return () => {
       active = false;
