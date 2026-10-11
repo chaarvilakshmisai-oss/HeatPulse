@@ -5,21 +5,15 @@ import {
   setManagerLoginFlowActive,
   signIn,
 } from '../lib/auth.js';
-import { getSite, invalidateSiteCache } from '../lib/api.js';
 import Sky from '../components/Sky.jsx';
 
-export async function routeManagerByPlant(loadSite, navigate) {
-  const site = await loadSite();
-  navigate(site ? '/app/dashboard' : '/app/site', {
-    replace: true,
-    ...(site ? {} : { state: { setupRequired: true } }),
-  });
+export function routeManagerByPlant(navigate) {
+  navigate('/app/home', { replace: true });
 }
 
-export async function completeManagerSignIn(signInManager, loadSite, navigate) {
+export async function completeManagerSignIn(signInManager, navigate) {
   await signInManager();
-  invalidateSiteCache();
-  await routeManagerByPlant(loadSite, navigate);
+  routeManagerByPlant(navigate);
 }
 
 export default function Login() {
@@ -32,17 +26,6 @@ export default function Login() {
   const navigate = useNavigate();
   const demoMode = isDemoMode();
 
-  async function continueToManagerApp() {
-    setManagerLoginFlowActive(true);
-    try {
-      await routeManagerByPlant(getSite, navigate);
-    } catch (siteError) {
-      setError(`Signed in, but plant status could not be loaded: ${siteError.message || 'Please retry.'}`);
-    } finally {
-      setManagerLoginFlowActive(false);
-    }
-  }
-
   async function handleSubmit(event) {
     event.preventDefault();
     if (loading) return;
@@ -52,7 +35,6 @@ export default function Login() {
     try {
       await completeManagerSignIn(
         () => signIn(email.trim(), password),
-        getSite,
         navigate,
       );
     } catch (signInError) {
@@ -78,9 +60,6 @@ export default function Login() {
           {demoMode && <p className="demo-banner" role="status">Demo mode: sample data, no real sign-in</p>}
           {location.state?.message && <p className="form-error" role="alert">{location.state.message}</p>}
           {error && <p className="form-error" role="alert">{error}</p>}
-          {error.startsWith('Signed in, but plant status') && (
-            <button className="secondary-button" type="button" onClick={continueToManagerApp}>Retry plant check</button>
-          )}
           <form onSubmit={handleSubmit}>
             <label htmlFor="manager-email">Email</label>
             <input id="manager-email" type="email" autoComplete="username" value={email} onChange={(event) => setEmail(event.target.value)} required={!demoMode} />

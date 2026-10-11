@@ -130,8 +130,8 @@ function ManagerRoutes() {
       <Route path="/tap" element={<Tap />} />
       <Route path="/app" element={<ProtectedRoute />}>
         <Route path="home" element={<ManagerHome />} />
-        <Route path="site" element={<Site />} />
         <Route element={<SiteRequired />}>
+          <Route path="site" element={<Site />} />
           <Route path="dashboard" element={<Dashboard />} />
           <Route path="zones" element={<Zones />} />
           <Route path="qr" element={<QrCodes />} />
@@ -174,8 +174,8 @@ function SiteRequired() {
       try {
         const site = await getSite();
         if (!active) return;
-        if (!site && location.pathname !== '/app/site') {
-          navigate('/app/site', { replace: true, state: { setupRequired: true } });
+        if (!site) {
+          navigate('/app/home', { replace: true });
           return;
         }
         setError('');

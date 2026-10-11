@@ -69,13 +69,13 @@ describe('public routes and manager home', () => {
     expect(UNKNOWN_ROUTE).toBe('/');
   });
 
-  it('keeps /app/site outside the plant-required guard', () => {
+  it('keeps only manager home outside the plant-required guard', () => {
     const appSource = readFileSync(new URL('../App.jsx', import.meta.url), 'utf8');
     const protectedSiteRoute = appSource.indexOf('<Route path="site" element={<Site />} />');
     const siteRequiredGuard = appSource.indexOf('<Route element={<SiteRequired />}>');
 
     expect(protectedSiteRoute).toBeGreaterThan(-1);
-    expect(protectedSiteRoute).toBeLessThan(siteRequiredGuard);
+    expect(protectedSiteRoute).toBeGreaterThan(siteRequiredGuard);
   });
 
   it('provides per-route metadata and an app-local not-found page', () => {
@@ -103,18 +103,11 @@ describe('public routes and manager home', () => {
     expect(html).toContain('manager-password');
   });
 
-  it('routes a successful sign-in to dashboard or setup based on plant status', async () => {
+  it('routes every successful sign-in to manager home without checking plant status', async () => {
     const signInManager = vi.fn().mockResolvedValue(undefined);
     const navigate = vi.fn();
-    await completeManagerSignIn(signInManager, async () => ({ name: 'Plant' }), navigate);
-    expect(navigate).toHaveBeenLastCalledWith('/app/dashboard', { replace: true });
-
-    navigate.mockClear();
-    await completeManagerSignIn(signInManager, async () => null, navigate);
-    expect(navigate).toHaveBeenLastCalledWith('/app/site', {
-      replace: true,
-      state: { setupRequired: true },
-    });
+    await completeManagerSignIn(signInManager, navigate);
+    expect(navigate).toHaveBeenLastCalledWith('/app/home', { replace: true });
   });
 
   it('renders registered and not-registered plant states on manager home', () => {
