@@ -71,6 +71,9 @@ function validateSite(body) {
   if (!finiteNumber(body.lon) || body.lon < -180 || body.lon > 180) {
     return { ok: false, error: "lon must be a number from -180 to 180" };
   }
+  if (body.lat === 0 && body.lon === 0) {
+    return { ok: false, error: "Plant coordinates cannot be 0, 0" };
+  }
   if (!Number.isInteger(body.radiusM) || body.radiusM < 50 || body.radiusM > 2000) {
     return { ok: false, error: "radiusM must be an integer from 50 to 2000" };
   }
@@ -82,8 +85,12 @@ function validateSite(body) {
   if (!Array.isArray(body.zones)) {
     return { ok: false, error: "zones must be an array" };
   }
+  if (body.zones.length >= 5000) {
+    return { ok: false, error: "A plant must have fewer than 5000 zones" };
+  }
 
   const ids = new Set();
+  const names = new Set();
   const zones = [];
   for (const [index, zone] of body.zones.entries()) {
     if (!zone || typeof zone !== "object" || Array.isArray(zone)) {
@@ -97,6 +104,9 @@ function validateSite(body) {
     if (typeof zone.name !== "string" || !zone.name.trim() || zone.name.trim().length > 40) {
       return { ok: false, error: `zones[${index}].name must be between 1 and 40 characters` };
     }
+    const normalizedName = zone.name.trim().toLocaleLowerCase("en-US");
+    if (names.has(normalizedName)) return { ok: false, error: "Zone names must be unique within a plant" };
+    names.add(normalizedName);
     if (!KINDS.has(zone.kind)) return { ok: false, error: `zones[${index}].kind is invalid` };
     if (!ROOFS.has(zone.roof)) return { ok: false, error: `zones[${index}].roof is invalid` };
     if (!VENTILATION.has(zone.ventilation)) {
