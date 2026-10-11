@@ -93,7 +93,9 @@ async function main() {
 
     const html = result.stdout || '';
     const rootContents = html.match(/<div id="root">([\s\S]*?)<\/body>/)?.[1] || '';
-    const appLoaded = rootContents.includes('Manager sign in') || rootContents.includes('Dashboard');
+    const appLoaded = rootContents.includes('Protect workers from heat stress')
+      || rootContents.includes('Manager sign in')
+      || rootContents.includes('Dashboard');
     if (!appLoaded || /global is not defined|Uncaught ReferenceError/.test(`${result.stdout}\n${result.stderr}`)) {
       throw new Error('Production preview did not render the frontend. Check the browser console and Vite bundle.');
     }
