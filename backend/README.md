@@ -32,6 +32,12 @@ The dev server listens on `http://localhost:3000`, uses the synthetic manager su
 | `POST /plants/{plantId}/workers` | Cognito ID token | Creates a worker with a plant-unique ID |
 | `PUT /plants/{plantId}/workers/{workerId}` | Cognito ID token | Updates a worker in an owned plant |
 | `DELETE /plants/{plantId}/workers/{workerId}` | Cognito ID token | Deactivates a worker in an owned plant |
+| `GET /plants/{plantId}/alert-settings` | Cognito ID token | Reads alert settings for an owned plant |
+| `PUT /plants/{plantId}/alert-settings` | Cognito ID token | Saves alert settings for an owned plant |
+| `GET /plants/{plantId}/alerts` | Cognito ID token | Reads alert history for an owned plant |
+| `POST /plants/{plantId}/alerts/test` | Cognito ID token | Sends a test alert for an owned plant |
+| `POST /plants/{plantId}/alerts/{alertId}/ack` | Cognito ID token | Acknowledges an alert for an owned plant |
+| `GET /alerts/ack?token=...` | Signed expiring link | Acknowledges an alert without manager login |
 | `GET /site` | Cognito ID token | Gets the manager's site, or `404 { "error": "No site yet" }` |
 | `PUT /site` | Cognito ID token | Validates and saves site settings and zones |
 | `GET /zones` | Cognito ID token | Returns saved zones and derived tap counts |
@@ -60,3 +66,6 @@ After deployment, use the `ApiUrl` output as frontend `VITE_API_URL`, and the sa
 - Location is a soft check based on browser-reported coordinates, which can be faked. Exposure scoring is a placeholder and all guidance is advisory.
 - Break interval/duration rules are placeholder values, not medical or legal guidance. Tune them in `backend/src/breaks.js` and `src/lib/breaks.js` together.
 - API Gateway stage throttling applies a 50 requests/second rate and 100-request burst limit; local public worker endpoints use a per-IP 60 requests/minute limit.
+- Alert settings and history share the plant DynamoDB table; local equivalents are persisted in ignored `backend/.dev-data.json`. Local scanning runs every minute by default (`ALERT_INTERVAL_MS`) and can be triggered with `POST /dev/run-alerts`.
+- Email provider selection is `ALERT_EMAIL_PROVIDER=console|smtp|ses` (default `console`); SMS selection is `ALERT_SMS_PROVIDER=console|sns` (default `console`). Console email writes to `backend/.dev-outbox/` (or `ALERT_OUTBOX_DIR`) and never sends externally. SMTP reads `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASS`, and `ALERT_FROM`; SES requires `ALERT_FROM` to be verified and its sandbox restricts recipients to verified addresses until production access is granted.
+- Configure `ALERT_ACK_SECRET`, `ALERT_DASHBOARD_URL`, and `ALERT_API_BASE_URL` in the backend environment. SAM accepts corresponding stack parameters. Never place secrets in frontend variables. SMS delivery requires SNS configuration and is limited to workers with explicit `smsConsent`; phone numbers are not stored without consent.
