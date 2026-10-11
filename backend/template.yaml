@@ -363,6 +363,28 @@ Resources:
             Path: /public/workers/{siteId}/{zoneId}/{workerId}/breaks
             Method: POST
 
+  AlertSchedulerFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: src/
+      Handler: alert-scheduler.handler
+      Description: Scores enabled plant zones and processes heat alerts
+      Timeout: 60
+      Environment:
+        Variables:
+          TABLE_NAME: !Ref ReportsTable
+      Policies:
+        - DynamoDBReadPolicy:
+            TableName: !Ref ReportsTable
+        - DynamoDBWritePolicy:
+            TableName: !Ref ReportsTable
+      Events:
+        EveryTenMinutes:
+          Type: Schedule
+          Properties:
+            Schedule: rate(10 minutes)
+            Enabled: true
+
 Outputs:
   ApiUrl:
     Description: Base URL of the HeatPulse API

@@ -27,6 +27,7 @@ function persistItems() {
 
 class GetCommand { constructor(input) { this.input = input; this.kind = "get"; } }
 class QueryCommand { constructor(input) { this.input = input; this.kind = "query"; } }
+class ScanCommand { constructor(input) { this.input = input; this.kind = "scan"; } }
 class PutCommand { constructor(input) { this.input = input; this.kind = "put"; } }
 class DeleteCommand { constructor(input) { this.input = input; this.kind = "delete"; } }
 class TransactWriteCommand { constructor(input) { this.input = input; this.kind = "transact"; } }
@@ -38,6 +39,7 @@ function indexKey(item, indexName) {
 const fakeLib = {
   GetCommand,
   QueryCommand,
+  ScanCommand,
   PutCommand,
   DeleteCommand,
   TransactWriteCommand,
@@ -73,6 +75,13 @@ const fakeLib = {
             if (index >= 0) items.splice(index, 1);
             persistItems();
             return {};
+          }
+          if (command.kind === "scan") {
+            const filterValue = input.ExpressionAttributeValues?.[":plant"];
+            const matches = filterValue
+              ? items.filter((entry) => entry.entityType === filterValue)
+              : items;
+            return { Items: matches.map((item) => ({ ...item })) };
           }
           if (command.kind === "transact") {
             const [update, put] = input.TransactItems;
@@ -154,6 +163,7 @@ Module._load = function (request, ...rest) {
 process.env.TABLE_NAME = "heatpulse-reports";
 process.env.ALLOW_ORIGIN = "*";
 const { handler, migrateLegacySite, seedDemoWorkers } = require("./src/app");
+const { runAlertSweep } = require("./src/alert-scheduler");
 
 const CORS = {
   "access-control-allow-origin": "*",
@@ -226,6 +236,17 @@ const server = http.createServer((request, response) => {
     }
 
     const body = Buffer.concat(chunks).toString("utf8");
+    if (request.method === "POST" && path === "/dev/run-alerts") {
+      runAlertSweep().then((summary) => {
+        response.writeHead(200, { ...CORS, "content-type": "application/json" });
+        response.end(JSON.stringify(summary));
+      }).catch((error) => {
+        console.error("Manual alert run failed", error?.message || "unknown error");
+        response.writeHead(500, { ...CORS, "content-type": "application/json" });
+        response.end(JSON.stringify({ error: "Unable to run alerts" }));
+      });
+      return;
+    }
     const nestedPlantMatch = path.match(/^\/plants\/([^/]+)(?:\/workers(?:\/([^/]+))?|\/(zones|reports|breaks|alerts|alert-settings))?$/);
     const publicWorkerMatch = path.match(/^\/public\/workers\/([^/]+)\/([^/]+)\/([^/]+)(?:\/breaks)?$/);
     const publicWorkerByIdMatch = path.match(/^\/public\/workers\/([^/]+)\/([^/]+)$/);
@@ -266,6 +287,12 @@ const server = http.createServer((request, response) => {
 });
 
 const port = Number(process.env.PORT) || 3000;
+const alertIntervalMs = process.env.ALERT_INTERVAL_MS === undefined
+  ? 60_000
+  : Number(process.env.ALERT_INTERVAL_MS);
+if (!Number.isSafeInteger(alertIntervalMs) || alertIntervalMs < 1_000) {
+  throw new Error("ALERT_INTERVAL_MS must be a whole number of at least 1000");
+}
 let startupWorkers = [];
 migrateLegacySite("local-manager")
   .then(() => seedDemoWorkers("local-manager"))
@@ -276,6 +303,12 @@ migrateLegacySite("local-manager")
       for (const worker of startupWorkers) {
         console.log(`Demo worker: plant code ${worker.plantCode}, Worker ID ${worker.workerId}`);
       }
+      const timer = setInterval(() => {
+        runAlertSweep().catch((error) => {
+          console.error("Alert scheduler failed", error?.message || "unknown error");
+        });
+      }, alertIntervalMs);
+      timer.unref();
     });
   })
   .catch((error) => {
