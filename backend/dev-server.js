@@ -213,11 +213,27 @@ function routeKey(method, path) {
 const publicRequestWindows = new Map();
 const PUBLIC_REQUEST_LIMIT = 60;
 const PUBLIC_WINDOW_MS = 60_000;
+const MAX_REQUEST_BODY_BYTES = 1_048_576;
 
 const server = http.createServer((request, response) => {
   const chunks = [];
-  request.on("data", (chunk) => chunks.push(chunk));
+  let requestBodyBytes = 0;
+  let requestTooLarge = false;
+  request.on("data", (chunk) => {
+    requestBodyBytes += chunk.length;
+    if (requestBodyBytes > MAX_REQUEST_BODY_BYTES) {
+      requestTooLarge = true;
+      chunks.length = 0;
+      return;
+    }
+    if (!requestTooLarge) chunks.push(chunk);
+  });
   request.on("end", async () => {
+    if (requestTooLarge) {
+      response.writeHead(413, { ...CORS, "content-type": "application/json" });
+      response.end(JSON.stringify({ error: "Request body is too large" }));
+      return;
+    }
     const url = new URL(request.url, "http://localhost");
     const path = url.pathname;
     if (request.method === "OPTIONS") {
@@ -286,6 +302,7 @@ const server = http.createServer((request, response) => {
       },
       queryStringParameters: Object.fromEntries(url.searchParams),
       body: body || undefined,
+      headers: request.headers,
       isBase64Encoded: false,
       requestContext: {
         authorizer: { jwt: { claims: { sub: "local-manager" } } },

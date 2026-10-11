@@ -47,10 +47,17 @@ async function recentTooHotCount(siteId, zone, now = new Date()) {
 
 function parseBody(event) {
   if (!event.body) return { ok: false, error: "Request body is required" };
+  const contentType = event.headers?.["content-type"] || event.headers?.["Content-Type"];
+  if (contentType && !/^application\/json(?:\s*;|$)/i.test(contentType)) {
+    return { ok: false, error: "Content-Type must be application/json" };
+  }
   try {
     const raw = event.isBase64Encoded
       ? Buffer.from(event.body, "base64").toString("utf8")
       : event.body;
+    if (Buffer.byteLength(raw, "utf8") > 1_048_576) {
+      return { ok: false, error: "Request body is too large" };
+    }
     return { ok: true, value: JSON.parse(raw) };
   } catch {
     return { ok: false, error: "Body must be valid JSON" };

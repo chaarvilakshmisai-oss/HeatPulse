@@ -8,6 +8,7 @@
     "build": "vite build",
     "preview": "vite preview",
     "test": "vitest run",
+    "test:negative": "node scripts/test-negative.mjs",
     "verify:production": "node scripts/check-production.mjs",
     "smoke": "bash scripts/smoke.sh",
     "seed": "node scripts/seed-taps.mjs"
