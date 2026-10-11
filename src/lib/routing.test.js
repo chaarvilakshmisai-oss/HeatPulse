@@ -11,6 +11,7 @@ import {
 import Welcome, { LandingNavActions } from '../pages/Welcome.jsx';
 import Login, { completeManagerSignIn } from '../pages/Login.jsx';
 import ManagerHome, { ManagerHomeContent } from '../pages/ManagerHome.jsx';
+import { getTapParams } from '../pages/Tap.jsx';
 import { WORKER_NOT_FOUND_MESSAGE, workerLookupErrorMessage } from '../pages/WorkerLogin.jsx';
 import { clearCognitoSessionStorage, initializeBrowserSession, signOut } from './auth.js';
 
@@ -208,6 +209,22 @@ describe('browser session initialization and Cognito storage', () => {
 });
 
 describe('worker login errors', () => {
+  it('uses worker login from manager login and routes a bare tap link away', () => {
+    const loginSource = readFileSync(new URL('../pages/Login.jsx', import.meta.url), 'utf8');
+    const tapSource = readFileSync(new URL('../pages/Tap.jsx', import.meta.url), 'utf8');
+    expect(loginSource).toContain('to="/worker-login">Worker login</Link>');
+    expect(tapSource).toContain('<Navigate to="/worker-login" replace />');
+    expect(tapSource).toContain('Go to worker login');
+    expect(getTapParams(new URLSearchParams())).toEqual({ siteId: '', zoneId: '' });
+  });
+
+  it('accepts current and legacy QR parameter names', () => {
+    expect(getTapParams(new URLSearchParams('plantId=plant-1&zoneId=zone-1')))
+      .toEqual({ siteId: 'plant-1', zoneId: 'zone-1' });
+    expect(getTapParams(new URLSearchParams('site=plant-1&zone=zone-1')))
+      .toEqual({ siteId: 'plant-1', zoneId: 'zone-1' });
+  });
+
   it('uses the same generic message for unknown, inactive, and wrong-plant IDs', () => {
     const invalidCases = [
       { status: 404, reason: 'unknown ID' },

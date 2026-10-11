@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { useSearchParams } from 'react-router-dom';
+import { Link, Navigate, useSearchParams } from 'react-router-dom';
 import { getPublicSite, getWorkerPlan, recordWorkerBreak, sendReport } from '../lib/api.js';
 import { isDemoMode } from '../lib/auth.js';
 import { BREAK_SCHEDULE_NOTE } from '../lib/breaks.js';
@@ -10,6 +10,13 @@ const OPTIONS = [
   { level: 2, word: 'Warm', description: 'Noticeably warm', color: '#F5C542' },
   { level: 3, word: 'Too hot', description: 'Hard to keep working', color: '#F2603E' },
 ];
+
+export function getTapParams(searchParams) {
+  return {
+    siteId: searchParams.get('plantId') || searchParams.get('site') || '',
+    zoneId: searchParams.get('zoneId') || searchParams.get('zone') || '',
+  };
+}
 
 function readPosition() {
   return new Promise((resolve, reject) => {
@@ -28,8 +35,7 @@ function readPosition() {
 
 export default function Tap() {
   const [searchParams] = useSearchParams();
-  const siteId = searchParams.get('site') || '';
-  const zoneId = searchParams.get('zone') || '';
+  const { siteId, zoneId } = getTapParams(searchParams);
   const [loading, setLoading] = useState(true);
   const [site, setSite] = useState(null);
   const [zone, setZone] = useState(null);
@@ -59,7 +65,6 @@ export default function Tap() {
     let active = true;
     async function load() {
       if (!siteId || !zoneId) {
-        setPageError('This tap link is missing a plant or work area. Please ask your supervisor for a new QR code.');
         setLoading(false);
         return;
       }
@@ -96,7 +101,7 @@ export default function Tap() {
         if (loadError.status === 404) {
           setPageError('This plant or work area could not be found. Check the QR code or ask your supervisor for a new one.');
         } else {
-          setPageError(loadError.message || 'Unable to load this tap link. Check your connection and try again.');
+          setPageError('This QR link is unavailable. Ask your supervisor for a new QR code.');
         }
       } finally {
         if (active) setLoading(false);
@@ -222,6 +227,8 @@ export default function Tap() {
     || (workerPlan?.breakStatus === 'upcoming' && workerPlan?.nextBreak
       && new Date(workerPlan.nextBreak.scheduledAt).getTime() <= clockNow);
 
+  if (!siteId || !zoneId) return <Navigate to="/worker-login" replace />;
+
   function tapAgain() {
     setSelectedLevel(null);
     setSubmitted(false);
@@ -245,6 +252,7 @@ export default function Tap() {
         ) : pageError ? (
           <section className="card tap-main">
             <p className="tap-error" role="alert">{pageError}</p>
+            <Link className="secondary-button" to="/worker-login">Go to worker login</Link>
           </section>
         ) : submitted ? (
           <section className="card tap-main tap-success-view" aria-live="polite">
