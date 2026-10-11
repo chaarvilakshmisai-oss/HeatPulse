@@ -1,4 +1,4 @@
-# HeatPulse for Industry – Backend
+# HeatPulse – Backend
 
 AWS SAM backend: API Gateway HTTP API → Lambda (Node.js 20) → DynamoDB. It implements the manager and worker API used by the React frontend.
 
@@ -30,6 +30,7 @@ The dev server listens on `http://localhost:3000`, resets its in-memory data whe
 | `DELETE /workers/{workerId}` | Cognito ID token | Deactivates a worker |
 | `GET /breaks` | Cognito ID token | Returns today's taken/required break counts by worker and zone |
 | `GET /public/workers/{siteId}/{zoneId}/{workerId}` | Public, throttled | Returns only that worker's shift and next-break status |
+| `GET /public/workers/{siteId}/{workerId}` | Public, throttled | Looks up an active worker by plant code and returns shift/break status |
 | `POST /public/workers/{siteId}/{zoneId}/{workerId}/breaks` | Public, throttled | Records a valid break start/end sequence |
 
 Manager identity and site ID come from the Cognito JWT `sub` claim. The frontend sends the ID token in `Authorization`. Plant shifts use the saved IANA time zone; worker shift fields are recurring 24-hour `HH:mm` times. Break records store `withinRadius` only, not raw coordinates or accuracy. DynamoDB report items expire after seven days.

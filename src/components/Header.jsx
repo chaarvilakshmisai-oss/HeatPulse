@@ -5,7 +5,6 @@ export default function Header({ hourIndex, isPlaying, onTogglePlay, isUsingSamp
     <header className="dashboard-header">
       {showBrand && <div className="brand">
         <h1>HeatPulse</h1>
-        <span>for Industry</span>
       </div>}
       <div className="header-meta">
         <span className="header-context">

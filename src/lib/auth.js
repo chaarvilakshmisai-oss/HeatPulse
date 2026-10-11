@@ -9,10 +9,36 @@ function getUserPool() {
     userPool = new CognitoUserPool({
       UserPoolId: USER_POOL_ID,
       ClientId: USER_POOL_CLIENT_ID,
+      Storage: window.sessionStorage,
     });
   }
   return userPool;
 }
+
+function isCognitoStorageKey(key) {
+  return key.startsWith('CognitoIdentityServiceProvider.') || key.startsWith('aws.cognito.');
+}
+
+function clearStorageKeys(storage) {
+  if (!storage) return;
+  for (let index = storage.length - 1; index >= 0; index -= 1) {
+    const key = storage.key(index);
+    if (key && isCognitoStorageKey(key)) storage.removeItem(key);
+  }
+}
+
+export function clearLegacyCognitoSession() {
+  if (typeof window === 'undefined') return;
+  clearStorageKeys(window.localStorage);
+}
+
+export function clearCognitoSessionStorage() {
+  if (typeof window === 'undefined') return;
+  clearStorageKeys(window.sessionStorage);
+  clearStorageKeys(window.localStorage);
+}
+
+if (typeof window !== 'undefined') clearLegacyCognitoSession();
 
 export function isDemoMode() {
   return IS_DEMO_MODE;
@@ -34,9 +60,8 @@ export function signIn(email, password) {
 }
 
 export function signOut() {
-  if (IS_DEMO_MODE) return;
-  const pool = getUserPool();
-  pool.getCurrentUser()?.signOut();
+  if (!IS_DEMO_MODE) getUserPool().getCurrentUser()?.signOut();
+  clearCognitoSessionStorage();
 }
 
 export function getCurrentUser() {

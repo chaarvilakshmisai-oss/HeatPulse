@@ -417,6 +417,17 @@ async function getPublicWorkerPlan(event) {
   return json(200, getWorkerPlan({ ...worker, zone: scoredZone }, site.timeZone || "Asia/Kolkata", events));
 }
 
+async function getPublicWorkerPlanById(event) {
+  const { siteId, workerId } = event.pathParameters || {};
+  const site = await loadSite(siteId);
+  const worker = await loadWorker(siteId, workerId);
+  const zone = validZone(site, worker?.workerZoneId);
+  if (!site || !worker?.active || !zone) return genericWorkerNotFound();
+  const events = await workerBreakEvents(siteId, workerId);
+  const scoredZone = { ...zone, recentTooHotTaps: await recentTooHotCount(siteId, zone) };
+  return json(200, getWorkerPlan({ ...worker, zone: scoredZone }, site.timeZone || "Asia/Kolkata", events));
+}
+
 async function recordPublicBreak(event) {
   const { siteId, zoneId, workerId } = event.pathParameters || {};
   const site = await loadSite(siteId);
@@ -651,6 +662,7 @@ exports.handler = async (event) => {
     if (routeKey === "PUT /workers/{workerId}") return updateWorker(event);
     if (routeKey === "DELETE /workers/{workerId}") return updateWorker(event, true);
     if (routeKey === "GET /breaks") return getBreakSummary(event);
+    if (routeKey === "GET /public/workers/{siteId}/{workerId}") return getPublicWorkerPlanById(event);
     if (routeKey === "GET /public/workers/{siteId}/{zoneId}/{workerId}") return getPublicWorkerPlan(event);
     if (routeKey === "POST /public/workers/{siteId}/{zoneId}/{workerId}/breaks") return recordPublicBreak(event);
     if (routeKey === "GET /site") return getSite(event);

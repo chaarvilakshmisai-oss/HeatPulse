@@ -5,6 +5,7 @@ import { signOut } from '../lib/auth.js';
 import Sky from './Sky.jsx';
 
 const NAV_ITEMS = [
+  { to: '/app/home', label: 'Home' },
   { to: '/app/dashboard', label: 'Dashboard' },
   { to: '/app/zones', label: 'Zones' },
   { to: '/app/site', label: 'Site & location' },
@@ -32,7 +33,7 @@ export function AppShell({ user, children }) {
 
   function handleSignOut() {
     signOut();
-    navigate('/login', { replace: true });
+    navigate('/', { replace: true });
   }
 
   return (
@@ -43,7 +44,7 @@ export function AppShell({ user, children }) {
           <div className="app-brand">
             <span className="logo-mark" aria-hidden="true">H</span>
             <div>
-              <strong>HeatPulse for Industry</strong>
+              <strong>HeatPulse</strong>
               <span className="app-site-name">{siteName}</span>
             </div>
           </div>

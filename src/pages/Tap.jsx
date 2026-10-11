@@ -235,7 +235,6 @@ export default function Tap() {
         <header className="tap-header">
           <div className="brand">
             <h1>HeatPulse</h1>
-            <span>for Industry</span>
           </div>
           {site && zone && <p className="tap-subtitle">{site.name} · {zone.name}</p>}
           {isDemoMode() && <p className="demo-banner" role="status">Demo mode: sample data, no real sign-in</p>}

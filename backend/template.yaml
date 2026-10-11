@@ -1,6 +1,6 @@
 AWSTemplateFormatVersion: "2010-09-09"
 Transform: AWS::Serverless-2016-10-31
-Description: HeatPulse for Industry - backend (HTTP API -> Lambda -> DynamoDB)
+Description: HeatPulse backend (HTTP API -> Lambda -> DynamoDB)
 
 Parameters:
   UserPoolId:
@@ -211,6 +211,12 @@ Resources:
           Properties:
             ApiId: !Ref HttpApi
             Path: /public/workers/{siteId}/{zoneId}/{workerId}
+            Method: GET
+        PublicWorkerPlanById:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref HttpApi
+            Path: /public/workers/{siteId}/{workerId}
             Method: GET
         PublicBreakEvent:
           Type: HttpApi

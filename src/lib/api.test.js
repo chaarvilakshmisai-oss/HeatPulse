@@ -20,6 +20,7 @@ import {
   getSite,
   getBreakSummary,
   getWorkerPlan,
+  getWorkerPlanById,
   getWorkers,
   getZones,
   deactivateWorker,
@@ -218,6 +219,13 @@ describe('frontend API contract', () => {
       method: 'POST',
       body: breakEvent,
     });
+  });
+
+  it('looks up a worker by plant code and worker ID without a token', async () => {
+    const plan = { shift: { start: '2026-10-11T01:30:00.000Z', end: '2026-10-11T09:30:00.000Z', timeZone: 'Asia/Kolkata' }, nextBreak: null, breakStatus: 'done' };
+    fetch.mockResolvedValueOnce(jsonResponse(plan));
+    await expect(getWorkerPlanById('plant 1', 'W-4K7Q')).resolves.toEqual(plan);
+    expectPublicRequest({ url: '/public/workers/plant%201/W-4K7Q' });
   });
 
   it('checks API health without a token', async () => {

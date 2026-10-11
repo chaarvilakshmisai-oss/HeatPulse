@@ -1,6 +1,6 @@
-# HeatPulse for Industry
+# HeatPulse
 
-React + Vite manager dashboard and worker QR experience for heat reports and shift breaks, with an AWS SAM backend.
+HeatPulse is a React + Vite manager dashboard and worker experience for heat reports and shift breaks, with an AWS SAM backend.
 
 ## Connect and run
 
@@ -23,14 +23,14 @@ Follow this order to connect a live plant:
 5. Sign in as the manager.
 6. Set up and save the site, its IANA plant time zone, and its zones.
 7. Open **Workers** and add workers with their zone assignments and recurring shift times; share each generated Worker ID.
-8. Open **QR codes** and copy the site ID from a worker QR URL’s `site` query parameter.
+8. Open **QR codes** and copy the site ID from a worker QR URL’s `site` query parameter. Workers can use this site ID as their plant code at `/worker-login`.
 9. Set `API_URL` and `SITE_ID`, then run `npm run smoke` (or `bash scripts/smoke.sh`) to check the health and public-site endpoints.
-10. Scan a zone QR code, enter the Worker ID, and use the shift/break card; workers can still submit anonymous heat taps.
+10. Workers can sign in at `/worker-login` with the plant code and Worker ID to view their shift and next break. Scanning a zone QR code still lets workers use the shift/break card and submit anonymous heat taps.
 11. Optionally seed sample taps with `API_URL`, `SITE_ID`, and `ZONE_ID` set, then run `npm run seed`. By default this submits five taps; set `COUNT` to a whole number from 1 to 100 to change that. If the site requires location, provide `LAT`, `LON`, and `ACCURACY`.
 
 The helper scripts call the deployed API and are intentionally not part of the test/build commands. `npm run smoke` checks `GET /health` and `GET /public/sites/{SITE_ID}` without sending a report. `npm run seed` submits sample `POST /report` requests.
 
-The backend implements public `GET /health`, `GET /public/sites/{siteId}`, `POST /report`, `GET /public/workers/{siteId}/{zoneId}/{workerId}`, and `POST /public/workers/{siteId}/{zoneId}/{workerId}/breaks`. Cognito-protected manager routes include `GET/PUT /site`, `GET /zones`, `GET /reports?limit=`, `GET/POST /workers`, `PUT/DELETE /workers/{workerId}`, and `GET /breaks`. The site ID used in worker QR URLs is the manager's Cognito subject, returned as `site.siteId` by `GET /site`.
+The backend implements public `GET /health`, `GET /public/sites/{siteId}`, `POST /report`, `GET /public/workers/{siteId}/{workerId}`, `GET /public/workers/{siteId}/{zoneId}/{workerId}`, and `POST /public/workers/{siteId}/{zoneId}/{workerId}/breaks`. Cognito-protected manager routes include `GET/PUT /site`, `GET /zones`, `GET /reports?limit=`, `GET/POST /workers`, `PUT/DELETE /workers/{workerId}`, and `GET /breaks`. The site ID used in worker QR URLs and as a worker plant code is the manager's Cognito subject, returned as `site.siteId` by `GET /site`.
 
 Shift times repeat daily in the plant's configured IANA time zone. Break intervals and durations are explicitly tunable placeholders in `src/lib/breaks.js`; they are not medical or legal guidance. The SAM stack adds two DynamoDB indexes for worker break lookup and daily reports, and API Gateway throttling for the HTTP API.
 

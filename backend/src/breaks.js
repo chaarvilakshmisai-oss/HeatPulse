@@ -1,5 +1,6 @@
 "use strict";
 
+// Keep in sync with src/lib/breaks.js; these are placeholders, not medical or legal guidance.
 const BREAK_RULES = Object.freeze([
   { maximumHeatScore: 39, intervalMinutes: 120, durationMinutes: 15 },
   { maximumHeatScore: 64, intervalMinutes: 90, durationMinutes: 20 },

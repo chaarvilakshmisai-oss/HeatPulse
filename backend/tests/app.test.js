@@ -167,6 +167,19 @@ test("manager site, zone and reports routes need a Cognito subject", async () =>
   assert.equal((await invoke("GET /reports", { sub: null })).status, 401);
 });
 
+test("GET /site returns only the site scoped to the authenticated manager subject", async () => {
+  const otherManager = "another-manager-sub";
+  await invoke("PUT /site", { body: siteInput, sub: managerSub });
+  await invoke("PUT /site", { body: { ...siteInput, name: "Other manager plant" }, sub: otherManager });
+
+  const ownSite = await invoke("GET /site", { sub: managerSub });
+  const otherOwnSite = await invoke("GET /site", { sub: otherManager });
+  assert.equal(ownSite.body.name, siteInput.name);
+  assert.equal(otherOwnSite.body.name, "Other manager plant");
+  assert.notEqual(ownSite.body.siteId, otherOwnSite.body.siteId);
+  assert.equal((await invoke("GET /site", { sub: null })).status, 401);
+});
+
 test("worker reports enforce geofence and flow into manager counts/reports", async () => {
   const savedSite = (await invoke("GET /site")).body;
   const zoneId = savedSite.zones[0].id;
@@ -291,6 +304,34 @@ async function createTestWorker(overrides = {}) {
     });
     assert.deepEqual(
       [unknown, wrongPlant, inactive].map(({ status, body }) => ({ status, body })),
+      [404, 404, 404].map(() => ({ status: 404, body: { error: "Worker not found" } })),
+    );
+  });
+
+  test("public worker plant-code lookup returns a plan and hides invalid IDs", async () => {
+    const created = await createTestWorker();
+    const valid = await invoke("GET /public/workers/{siteId}/{workerId}", {
+      siteId: managerSub,
+      workerId: created.body.workerId,
+    });
+    assert.equal(valid.status, 200);
+    assert.deepEqual(Object.keys(valid.body).sort(), ["breakStatus", "nextBreak", "shift"]);
+
+    const unknown = await invoke("GET /public/workers/{siteId}/{workerId}", {
+      siteId: managerSub,
+      workerId: "W-UNKNOWN",
+    });
+    const wrongPlant = await invoke("GET /public/workers/{siteId}/{workerId}", {
+      siteId: "another-plant",
+      workerId: created.body.workerId,
+    });
+    await invoke("DELETE /workers/{workerId}", { workerId: created.body.workerId });
+    const inactive = await invoke("GET /public/workers/{siteId}/{workerId}", {
+      siteId: managerSub,
+      workerId: created.body.workerId,
+    });
+    assert.deepEqual(
+      [unknown, inactive, wrongPlant].map(({ status, body }) => ({ status, body })),
       [404, 404, 404].map(() => ({ status: 404, body: { error: "Worker not found" } })),
     );
   });

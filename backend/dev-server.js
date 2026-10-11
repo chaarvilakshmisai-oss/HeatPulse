@@ -147,6 +147,9 @@ function routeKey(method, path) {
   if (/^\/public\/workers\/[^/]+\/[^/]+\/[^/]+$/.test(path)) {
     return `${method} /public/workers/{siteId}/{zoneId}/{workerId}`;
   }
+  if (/^\/public\/workers\/[^/]+\/[^/]+$/.test(path)) {
+    return `${method} /public/workers/{siteId}/{workerId}`;
+  }
   if (/^\/workers\/[^/]+$/.test(path)) return `${method} /workers/{workerId}`;
   return `${method} ${path}`;
 }
@@ -185,16 +188,21 @@ const server = http.createServer((request, response) => {
 
     const body = Buffer.concat(chunks).toString("utf8");
     const publicWorkerMatch = path.match(/^\/public\/workers\/([^/]+)\/([^/]+)\/([^/]+)(?:\/breaks)?$/);
+    const publicWorkerByIdMatch = path.match(/^\/public\/workers\/([^/]+)\/([^/]+)$/);
     const workerMatch = path.match(/^\/workers\/([^/]+)$/);
     const event = {
       routeKey: key,
       rawPath: path,
       pathParameters: {
-        siteId: publicSiteId(path) || (publicWorkerMatch ? decodeURIComponent(publicWorkerMatch[1]) : undefined),
+        siteId: publicSiteId(path)
+          || (publicWorkerMatch ? decodeURIComponent(publicWorkerMatch[1]) : undefined)
+          || (publicWorkerByIdMatch ? decodeURIComponent(publicWorkerByIdMatch[1]) : undefined),
         zoneId: publicWorkerMatch ? decodeURIComponent(publicWorkerMatch[2]) : undefined,
         workerId: publicWorkerMatch
           ? decodeURIComponent(publicWorkerMatch[3])
-          : workerMatch ? decodeURIComponent(workerMatch[1]) : undefined,
+          : publicWorkerByIdMatch
+            ? decodeURIComponent(publicWorkerByIdMatch[2])
+            : workerMatch ? decodeURIComponent(workerMatch[1]) : undefined,
       },
       queryStringParameters: Object.fromEntries(url.searchParams),
       body: body || undefined,

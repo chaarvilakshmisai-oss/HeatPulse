@@ -224,6 +224,11 @@ export async function getWorkerPlan(siteId, zoneId, workerId) {
   return request(path);
 }
 
+export async function getWorkerPlanById(siteId, workerId) {
+  const path = `/public/workers/${encodeURIComponent(siteId)}/${encodeURIComponent(workerId)}`;
+  return request(path);
+}
+
 export async function recordWorkerBreak(siteId, zoneId, workerId, breakEvent) {
   const path = `/public/workers/${encodeURIComponent(siteId)}/${encodeURIComponent(zoneId)}/${encodeURIComponent(workerId)}/breaks`;
   return request(path, { method: 'POST', body: JSON.stringify(breakEvent) });
