@@ -4,6 +4,17 @@ import { signOut } from '../lib/auth.js';
 import { usePlants } from '../lib/PlantContext.jsx';
 import Sky from './Sky.jsx';
 
+export function getNavItems(selectedPlantId) {
+  if (!selectedPlantId) return [{ to: '/app/home', label: 'Home' }];
+  return [
+    { to: '/app/home', label: 'Home' },
+    ...['dashboard', 'zones', 'site', 'qr', 'reports', 'workers'].map((page) => ({
+      to: `/app/plants/${encodeURIComponent(selectedPlantId)}/${page}`,
+      label: page === 'site' ? 'Site & location' : page === 'qr' ? 'QR codes' : `${page[0].toUpperCase()}${page.slice(1)}`,
+    })),
+  ];
+}
+
 export function AppShell({ user, children }) {
   const navigate = useNavigate();
   const location = useLocation();
@@ -26,13 +37,7 @@ export function AppShell({ user, children }) {
     navigate(`/app/plants/${encodeURIComponent(plantId)}/${remainder}`);
   }
 
-  const navItems = [
-    { to: '/app/home', label: 'Home' },
-    ...['dashboard', 'zones', 'site', 'qr', 'reports', 'workers'].map((page) => ({
-      to: selectedPlantId ? `/app/plants/${selectedPlantId}/${page}` : '/app/home',
-      label: page === 'site' ? 'Site & location' : page === 'qr' ? 'QR codes' : `${page[0].toUpperCase()}${page.slice(1)}`,
-    })),
-  ];
+  const navItems = getNavItems(selectedPlant?.plantId || '');
 
   return (
     <div className="sky-shell">

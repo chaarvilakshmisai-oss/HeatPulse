@@ -1,4 +1,4 @@
-import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { getPlants } from './api.js';
 
 const PlantContext = createContext(null);
@@ -17,20 +17,28 @@ export function PlantProvider({ children }) {
   const [selectedPlantId, setSelectedPlantIdState] = useState(readSelectedPlant);
   const [status, setStatus] = useState('loading');
   const [error, setError] = useState('');
+  const refreshPromise = useRef(null);
 
   const refreshPlants = useCallback(async () => {
+    if (refreshPromise.current) return refreshPromise.current;
     setStatus('loading');
     setError('');
-    try {
-      const result = await getPlants();
-      setPlants(result);
-      setStatus('ready');
-      return result;
-    } catch (requestError) {
-      setError(requestError.message || 'Unable to load your plants.');
-      setStatus('error');
-      throw requestError;
-    }
+    const pending = getPlants()
+      .then((result) => {
+        setPlants(result);
+        setStatus('ready');
+        return result;
+      })
+      .catch((requestError) => {
+        setError(requestError.message || 'Unable to load your plants.');
+        setStatus('error');
+        throw requestError;
+      })
+      .finally(() => {
+        if (refreshPromise.current === pending) refreshPromise.current = null;
+      });
+    refreshPromise.current = pending;
+    return pending;
   }, []);
 
   useEffect(() => {

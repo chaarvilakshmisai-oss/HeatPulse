@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
-import { getHealth, getSite, saveSite } from '../lib/api.js';
+import { getHealth, getSite, savePlant, saveSite } from '../lib/api.js';
 import { buildSitePayload } from '../lib/sitePayload.js';
 import { validateSite } from '../lib/validation.js';
 import { usePlants } from '../lib/PlantContext.jsx';
@@ -53,6 +53,12 @@ export default function Site() {
 
   useEffect(() => {
     let active = true;
+    if (!plantId) {
+      setLoading(false);
+      return () => {
+        active = false;
+      };
+    }
     setLoading(true);
     setLoadError('');
     getSite(plantId)
@@ -188,7 +194,9 @@ export default function Site() {
   }
 
   async function persist(deviceLocation) {
-    const result = await saveSite(payload(deviceLocation), plantId);
+    const result = plantId
+      ? await saveSite(payload(deviceLocation), plantId)
+      : await savePlant(payload(deviceLocation));
     const savedSite = plantId ? await getSite(plantId) : result;
     if (!savedSite) throw new Error('The saved plant could not be reloaded.');
     setSite({ ...INITIAL_SITE, ...savedSite });
@@ -198,7 +206,7 @@ export default function Site() {
     if (!plantId && savedSite.plantId) {
       setSelectedPlantId(savedSite.plantId);
       await refreshPlants();
-      navigate(`/app/plants/${encodeURIComponent(savedSite.plantId)}/dashboard`, { replace: true });
+      navigate('/app/home', { replace: true });
     }
   }
 
@@ -222,7 +230,9 @@ export default function Site() {
     setSuccess('');
     try {
       const deviceLocation = await readPosition();
-      const result = await saveSite(payload(deviceLocation), plantId);
+      const result = plantId
+        ? await saveSite(payload(deviceLocation), plantId)
+        : await savePlant(payload(deviceLocation));
       const savedSite = plantId ? await getSite(plantId) : result;
       if (!savedSite) throw new Error('The saved plant could not be reloaded.');
       setSite({ ...INITIAL_SITE, ...savedSite });
@@ -232,7 +242,7 @@ export default function Site() {
       if (!plantId && savedSite.plantId) {
         setSelectedPlantId(savedSite.plantId);
         await refreshPlants();
-        navigate(`/app/plants/${encodeURIComponent(savedSite.plantId)}/dashboard`, { replace: true });
+        navigate('/app/home', { replace: true });
       }
     } catch (verifyError) {
       if (verifyError.message) setError(verifyError.message);
@@ -242,6 +252,14 @@ export default function Site() {
   }
 
   if (loading) return <div className="card page-state" role="status">Loading plant details…</div>;
+  if (loadError && plantId) {
+    return (
+      <section className="card page-state">
+        <p role="alert">{loadError}</p>
+        <button type="button" className="secondary-button" onClick={() => setLoadAttempt((attempt) => attempt + 1)}>Retry loading plant</button>
+      </section>
+    );
+  }
 
   const lat = Number(site.lat);
   const lon = Number(site.lon);
@@ -258,7 +276,6 @@ export default function Site() {
       </header>
       <p className="soft-check-note">Location comes from the browser and is a soft check; browser-reported coordinates can be inaccurate or faked.</p>
       {error && <p className="form-error" role="alert">{error}</p>}
-      {loadError && <button type="button" className="secondary-button" onClick={() => setLoadAttempt((attempt) => attempt + 1)}>Retry loading plant</button>}
       {success && <p className="success-message" role="status">{success}</p>}
       <div className="connection-status" role="status" aria-live="polite">
         <strong>Connection status:</strong>{' '}

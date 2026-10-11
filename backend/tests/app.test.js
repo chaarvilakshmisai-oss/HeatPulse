@@ -228,6 +228,12 @@ test("plant CRUD scopes access to the owner and generates a private short code",
   assert.equal((await invoke("GET /plants/{plantId}/workers", { plantId })).status, 404);
 });
 
+test("GET /plants returns an empty list for a new manager", async () => {
+  const response = await invoke("GET /plants", { sub: "manager-with-no-plants" });
+  assert.equal(response.status, 200);
+  assert.deepEqual(response.body, []);
+});
+
 test("legacy single site migrates once into an owned plant and preserves zones", async () => {
   const ownerId = "legacy-owner";
   const legacyZone = { id: "old-zone", ...zoneInput };
@@ -243,6 +249,19 @@ test("legacy single site migrates once into an owned plant and preserves zones",
     requireLocation: false,
     zones: [legacyZone],
   });
+  rows.set(`SITE#${ownerId}|WORKER#W-LEG1`, {
+    zoneId: `SITE#${ownerId}`,
+    ts: "WORKER#W-LEG1",
+    entityType: "worker",
+    workerId: "W-LEG1",
+    name: "Legacy worker",
+    workerZoneId: "old-zone",
+    shiftStart: "07:00",
+    shiftEnd: "15:00",
+    active: true,
+    gsi1pk: `SITE#${ownerId}#WORKER#W-LEG1`,
+    gsi1sk: "PROFILE",
+  });
   const migrated = await migrateLegacySite(ownerId);
   assert.equal(migrated.name, "Legacy plant");
   assert.equal(migrated.zones[0].id, "old-zone");
@@ -251,6 +270,8 @@ test("legacy single site migrates once into an owned plant and preserves zones",
   assert.equal(plants.body.length, 1);
   assert.equal(plants.body[0].plantId, migrated.plantId);
   assert.equal(rows.has(`SITE#${ownerId}|SITE`), true);
+  assert.equal(rows.has(`SITE#${ownerId}|WORKER#W-LEG1`), false);
+  assert.equal(rows.has(`SITE#${migrated.plantId}|WORKER#W-LEG1`), true);
 });
 
 test("worker reports enforce geofence and flow into manager counts/reports", async () => {

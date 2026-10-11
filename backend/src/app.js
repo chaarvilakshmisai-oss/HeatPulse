@@ -282,6 +282,20 @@ async function migrateLegacySite(ownerId) {
   });
   plant.migratedFromSiteId = ownerId;
   await putPlantRecord(plant);
+  const legacyWorkers = await listSiteWorkers(ownerId);
+  for (const worker of legacyWorkers) {
+    const migratedWorker = {
+      ...worker,
+      ...workerItemKey(plantId, worker.workerId),
+      plantId,
+      gsi1pk: `${sitePartition(plantId)}#WORKER#${worker.workerId}`,
+    };
+    await doc.send(new PutCommand({ TableName: TABLE_NAME, Item: migratedWorker }));
+    await doc.send(new DeleteCommand({
+      TableName: TABLE_NAME,
+      Key: workerItemKey(ownerId, worker.workerId),
+    }));
+  }
   return publicManagerSite(plant);
 }
 
@@ -511,35 +525,6 @@ async function seedDemoWorkers(ownerId) {
     }
   }
   return seeded;
-}
-
-async function ensureLocalSamplePlant(ownerId) {
-  if ((await listOwnerPlants(ownerId)).length || await loadSite(ownerId)) return null;
-  const plantId = randomUUID();
-  const plantCode = await generatePlantCode(plantId);
-  const plant = makePlant({
-    plantId,
-    ownerId,
-    plantCode,
-    input: {
-      name: "HeatPulse Demo Plant",
-      lat: 37.7749,
-      lon: -122.4194,
-      radiusM: 300,
-      requireLocation: false,
-      timeZone: "UTC",
-      zones: [{
-        id: randomUUID(),
-        name: "Packing",
-        kind: "indoor",
-        roof: "metal",
-        ventilation: "average",
-        headcount: 12,
-      }],
-    },
-  });
-  await putPlantRecord(plant);
-  return publicManagerSite(plant);
 }
 
 async function lookupWorker(event) {
@@ -1104,4 +1089,3 @@ exports.handler = async (event) => {
 exports.migrateLegacySite = migrateLegacySite;
 exports.findWorkerPlant = findWorkerPlant;
 exports.seedDemoWorkers = seedDemoWorkers;
-exports.ensureLocalSamplePlant = ensureLocalSamplePlant;

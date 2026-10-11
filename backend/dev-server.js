@@ -153,7 +153,7 @@ Module._load = function (request, ...rest) {
 
 process.env.TABLE_NAME = "heatpulse-reports";
 process.env.ALLOW_ORIGIN = "*";
-const { handler, migrateLegacySite, ensureLocalSamplePlant, seedDemoWorkers } = require("./src/app");
+const { handler, migrateLegacySite, seedDemoWorkers } = require("./src/app");
 
 const CORS = {
   "access-control-allow-origin": "*",
@@ -266,7 +266,6 @@ const server = http.createServer((request, response) => {
 const port = Number(process.env.PORT) || 3000;
 let startupWorkers = [];
 migrateLegacySite("local-manager")
-  .then(() => ensureLocalSamplePlant("local-manager"))
   .then(() => seedDemoWorkers("local-manager"))
   .then((workers) => { startupWorkers = workers; })
   .then(() => {

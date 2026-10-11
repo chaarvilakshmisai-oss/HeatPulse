@@ -189,6 +189,50 @@ test("local API migrates a legacy site and seeds a usable demo worker", async (c
   assert.equal((await login.json()).plantName, "Existing sample plant");
 });
 
+test("local API exposes empty plant list and owner-scoped plant CRUD", async (context) => {
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), "heatpulse-plant-routes-"));
+  context.after(() => fs.rmSync(directory, { recursive: true, force: true }));
+  const port = await getAvailablePort();
+  const dataFile = path.join(directory, "dev-data.json");
+  const child = await startServer(port, dataFile);
+  context.after(async () => stopServer(child));
+  const baseUrl = `http://127.0.0.1:${port}`;
+  const headers = { "content-type": "application/json" };
+
+  const initial = await fetch(`${baseUrl}/plants`);
+  assert.equal(initial.status, 200);
+  assert.deepEqual(await initial.json(), []);
+
+  const payload = {
+    name: "CRUD plant",
+    lat: 12.3,
+    lon: 45.6,
+    radiusM: 300,
+    requireLocation: false,
+    timeZone: "UTC",
+    zones: [],
+  };
+  const createdResponse = await fetch(`${baseUrl}/plants`, {
+    method: "POST",
+    headers,
+    body: JSON.stringify(payload),
+  });
+  assert.equal(createdResponse.status, 201);
+  const created = await createdResponse.json();
+  assert.equal((await fetch(`${baseUrl}/plants/${created.plantId}`)).status, 200);
+
+  const updatedResponse = await fetch(`${baseUrl}/plants/${created.plantId}`, {
+    method: "PUT",
+    headers,
+    body: JSON.stringify({ ...payload, name: "Updated CRUD plant" }),
+  });
+  assert.equal(updatedResponse.status, 200);
+  assert.equal((await updatedResponse.json()).name, "Updated CRUD plant");
+  assert.equal((await fetch(`${baseUrl}/plants/not-owned`)).status, 404);
+  assert.equal((await fetch(`${baseUrl}/plants/${created.plantId}`, { method: "DELETE" })).status, 200);
+  assert.deepEqual(await (await fetch(`${baseUrl}/plants`)).json(), []);
+});
+
 test("local API persists multiple plants and plant-scoped workers across restart", async (context) => {
   const directory = fs.mkdtempSync(path.join(os.tmpdir(), "heatpulse-dev-plants-"));
   context.after(() => fs.rmSync(directory, { recursive: true, force: true }));

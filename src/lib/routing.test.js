@@ -14,6 +14,8 @@ import ManagerHome, { ManagerHomeContent } from '../pages/ManagerHome.jsx';
 import { getTapParams } from '../pages/Tap.jsx';
 import { WORKER_NOT_FOUND_MESSAGE, workerLookupErrorMessage } from '../pages/WorkerLogin.jsx';
 import { clearCognitoSessionStorage, initializeBrowserSession, signOut } from './auth.js';
+import { getNavItems } from '../components/AppShell.jsx';
+import { PlantProvider } from './PlantContext.jsx';
 
 describe('protected route decision', () => {
   it('redirects unauthenticated users to login with their intended URL', () => {
@@ -134,6 +136,51 @@ describe('public routes and manager home', () => {
     expect(notRegistered).toContain('No plants registered yet');
     expect(notRegistered).toContain('Register your first plant');
     expect(ManagerHome).toBeTypeOf('function');
+  });
+
+  it('shows only Home without a selection and links every page to the selected plant', () => {
+    expect(getNavItems('')).toEqual([{ to: '/app/home', label: 'Home' }]);
+    expect(getNavItems('plant-2')).toEqual([
+      { to: '/app/home', label: 'Home' },
+      { to: '/app/plants/plant-2/dashboard', label: 'Dashboard' },
+      { to: '/app/plants/plant-2/zones', label: 'Zones' },
+      { to: '/app/plants/plant-2/site', label: 'Site & location' },
+      { to: '/app/plants/plant-2/qr', label: 'QR codes' },
+      { to: '/app/plants/plant-2/reports', label: 'Reports' },
+      { to: '/app/plants/plant-2/workers', label: 'Workers' },
+    ]);
+    const shellSource = readFileSync(new URL('../components/AppShell.jsx', import.meta.url), 'utf8');
+    const contextSource = readFileSync(new URL('./PlantContext.jsx', import.meta.url), 'utf8');
+    const styles = readFileSync(new URL('../styles.css', import.meta.url), 'utf8');
+    expect(shellSource).toContain('className={({ isActive }) => `nav-item${isActive ? \' active\' : \'\'}`');
+    expect(contextSource).toContain('if (refreshPromise.current) return refreshPromise.current;');
+    expect(styles).toContain('.nav-item.active {');
+    expect(styles).toContain('text-decoration: none;');
+  });
+
+  it('routes Add plant to the existing form and returns to home after saving', () => {
+    const appSource = readFileSync(new URL('../App.jsx', import.meta.url), 'utf8');
+    const homeSource = readFileSync(new URL('../pages/ManagerHome.jsx', import.meta.url), 'utf8');
+    const siteSource = readFileSync(new URL('../pages/Site.jsx', import.meta.url), 'utf8');
+    expect(appSource).toContain('<Route path="plants/new" element={<Site />} />');
+    expect(homeSource).toContain('to="/app/plants/new">Add plant</Link>');
+    expect(siteSource).toContain("navigate('/app/home', { replace: true })");
+  });
+
+  it('shows worker lookup only after plant data loaded with at least one plant', () => {
+    const homeSource = readFileSync(new URL('../pages/ManagerHome.jsx', import.meta.url), 'utf8');
+    expect(homeSource).toMatch(/status === 'ready' && plants\.length > 0[\s\S]*?worker-lookup/);
+  });
+
+  it('renders the signed-in Home route with its Add plant and Retry handlers wired', () => {
+    const html = renderToString(createElement(
+      MemoryRouter,
+      null,
+      createElement(PlantProvider, null, createElement(ManagerHome))
+    ));
+    expect(html).toContain('Your plants');
+    expect(html).toContain('Add plant');
+    expect(html).toContain('Loading plants');
   });
 });
 

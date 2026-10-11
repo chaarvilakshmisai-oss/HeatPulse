@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { deletePlant, findWorkerPlant, getPlants, getWorkers, getZones } from '../lib/api.js';
+import { deletePlant, findWorkerPlant, getWorkers, getZones } from '../lib/api.js';
 import { scoreZone } from '../lib/scoring.js';
 import { usePlants } from '../lib/PlantContext.jsx';
 
@@ -12,7 +12,7 @@ function riskLabel(zones) {
   return worst >= 65 ? 'High risk' : worst >= 40 ? 'Watch' : 'Calm';
 }
 
-export function ManagerHomeContent({ status, plants, summaries, error, onRetry, onDelete }) {
+export function ManagerHomeContent({ status, plants, summaries, error, onRetry, onDelete, onOpenPlant }) {
   if (status === 'loading') {
     return <div className="manager-plant-grid" aria-label="Loading plants">{[1, 2, 3].map((item) => <div className="card plant-skeleton" key={item} aria-hidden="true" />)}</div>;
   }
@@ -53,17 +53,17 @@ export function ManagerHomeContent({ status, plants, summaries, error, onRetry, 
           return (
             <li className="card manager-plant-card" key={plant.plantId}>
               <div className="plant-card-heading">
-                <h2>{plant.name}</h2>
+                <h2><Link to={`${base}/dashboard`} onClick={() => onOpenPlant(plant.plantId)}>{plant.name}</Link></h2>
                 <span className={`plant-risk-chip risk-${riskLabel(summary.zones).toLowerCase().replaceAll(' ', '-')}`}>{riskLabel(summary.zones)}</span>
               </div>
               <p className="plant-code">Plant code: <code>{plant.plantCode}</code></p>
               <p>{location}</p>
               <p>{summary.zones.length} {summary.zones.length === 1 ? 'zone' : 'zones'} · {summary.workers.length} {summary.workers.length === 1 ? 'worker' : 'workers'}</p>
               <div className="plant-card-actions">
-                <Link className="primary-button" to={`${base}/dashboard`}>Open dashboard</Link>
-                <Link className="secondary-button" to={`${base}/zones`}>Zones</Link>
-                <Link className="secondary-button" to={`${base}/workers`}>Workers</Link>
-                <Link className="secondary-button" to={`${base}/site`}>Edit plant</Link>
+                <Link className="primary-button" to={`${base}/dashboard`} onClick={() => onOpenPlant(plant.plantId)}>Open dashboard</Link>
+                <Link className="secondary-button" to={`${base}/zones`} onClick={() => onOpenPlant(plant.plantId)}>Zones</Link>
+                <Link className="secondary-button" to={`${base}/workers`} onClick={() => onOpenPlant(plant.plantId)}>Workers</Link>
+                <Link className="secondary-button" to={`${base}/site`} onClick={() => onOpenPlant(plant.plantId)}>Edit plant</Link>
                 <button type="button" className="secondary-button" onClick={async () => {
                   try {
                     await navigator.clipboard.writeText(plant.plantCode);
@@ -85,9 +85,14 @@ export function ManagerHomeContent({ status, plants, summaries, error, onRetry, 
 }
 
 export default function ManagerHome() {
-  const { setPlants } = usePlants();
+  const {
+    plants: contextPlants,
+    refreshPlants,
+    status: plantsStatus,
+    error: plantsError,
+    setSelectedPlantId,
+  } = usePlants();
   const [status, setStatus] = useState('loading');
-  const [plants, setLocalPlants] = useState([]);
   const [summaries, setSummaries] = useState([]);
   const [error, setError] = useState('');
   const [retryCount, setRetryCount] = useState(0);
@@ -96,30 +101,40 @@ export default function ManagerHome() {
   const [workerMatches, setWorkerMatches] = useState(null);
   const [workerLookupError, setWorkerLookupError] = useState('');
 
-  const load = useCallback(async () => {
+  const plants = useMemo(
+    () => [...contextPlants].sort((left, right) => left.name.localeCompare(right.name)),
+    [contextPlants],
+  );
+
+  const loadDetails = useCallback(async () => {
+    if (plantsStatus === 'loading') {
+      setStatus('loading');
+      return;
+    }
+    if (plantsStatus === 'error') {
+      setError(plantsError);
+      setStatus('error');
+      return;
+    }
     setStatus('loading');
     setError('');
     try {
-      const result = await getPlants();
-      const sorted = [...result].sort((left, right) => left.name.localeCompare(right.name));
-      const details = await Promise.all(sorted.map(async (plant) => {
+      const details = await Promise.all(plants.map(async (plant) => {
         const [zones, workers] = await Promise.all([
           getZones(plant.plantId),
           getWorkers(plant.plantId),
         ]);
         return { plantId: plant.plantId, zones, workers };
       }));
-      setPlants(sorted);
-      setLocalPlants(sorted);
       setSummaries(details);
       setStatus('ready');
     } catch (loadError) {
       setError(loadError.message || 'Unable to load plant information.');
       setStatus('error');
     }
-  }, [setPlants]);
+  }, [plants, plantsError, plantsStatus]);
 
-  useEffect(() => { load(); }, [load, retryCount]);
+  useEffect(() => { loadDetails(); }, [loadDetails, retryCount]);
 
   const filteredPlants = useMemo(() => plants.filter((plant) => plant.name.toLowerCase().includes(search.trim().toLowerCase())), [plants, search]);
 
@@ -127,7 +142,7 @@ export default function ManagerHome() {
     if (!window.confirm(`Delete ${plant.name} and its zones and workers?`)) return;
     try {
       await deletePlant(plant.plantId);
-      setRetryCount((count) => count + 1);
+      await refreshPlants();
     } catch (deleteError) {
       setError(deleteError.message || 'Unable to delete this plant.');
       setStatus('error');
@@ -146,6 +161,19 @@ export default function ManagerHome() {
     }
   }
 
+  async function retry() {
+    setError('');
+    if (plantsStatus === 'error') {
+      try {
+        await refreshPlants();
+      } catch {
+        return;
+      }
+      return;
+    }
+    setRetryCount((count) => count + 1);
+  }
+
   return (
     <section className="manager-page">
       <header className="page-heading">
@@ -157,20 +185,23 @@ export default function ManagerHome() {
         plants={filteredPlants}
         summaries={summaries}
         error={error}
-        onRetry={() => setRetryCount((count) => count + 1)}
+        onRetry={retry}
         onDelete={removePlant}
+        onOpenPlant={setSelectedPlantId}
       />
-      <form className="card worker-lookup" onSubmit={lookupWorker}>
-        <label htmlFor="home-worker-lookup">Find a worker</label>
-        <div className="button-row">
-          <input id="home-worker-lookup" value={workerId} onChange={(event) => setWorkerId(event.target.value.toUpperCase())} placeholder="W-4K7Q" />
-          <button type="submit" className="secondary-button" disabled={!workerId.trim()}>Search</button>
-        </div>
-        {workerLookupError && <p className="form-error" role="alert">{workerLookupError}</p>}
-        {workerMatches && (workerMatches.length
-          ? workerMatches.map((match) => <p key={match.plantId}>{match.workerName} works at {match.plantName}{match.zone ? ` · ${match.zone.name}` : ''}</p>)
-          : <p>No matching worker found in your plants.</p>)}
-      </form>
+      {status === 'ready' && plants.length > 0 && (
+        <form className="card worker-lookup" onSubmit={lookupWorker}>
+          <label htmlFor="home-worker-lookup">Find a worker</label>
+          <div className="button-row">
+            <input id="home-worker-lookup" value={workerId} onChange={(event) => setWorkerId(event.target.value.toUpperCase())} placeholder="W-4K7Q" />
+            <button type="submit" className="secondary-button" disabled={!workerId.trim()}>Search</button>
+          </div>
+          {workerLookupError && <p className="form-error" role="alert">{workerLookupError}</p>}
+          {workerMatches && (workerMatches.length
+            ? workerMatches.map((match) => <p key={match.plantId}>{match.workerName} works at {match.plantName}{match.zone ? ` · ${match.zone.name}` : ''}</p>)
+            : <p>No matching worker found in your plants.</p>)}
+        </form>
+      )}
       {status === 'ready' && plants.length > 3 && (
         <label className="plant-search">Search plants<input type="search" value={search} onChange={(event) => setSearch(event.target.value)} /></label>
       )}
