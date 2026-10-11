@@ -1,8 +1,10 @@
 "use strict";
 
+const { ALERT_THRESHOLD_DEFAULTS } = require("./alerts");
+
 const DEFAULT_ALERT_SETTINGS = Object.freeze({
   enabled: false,
-  thresholds: Object.freeze({ watch: 40, high: 60, critical: 80 }),
+  thresholds: ALERT_THRESHOLD_DEFAULTS,
   cooldownMinutes: 30,
   escalateAfterMinutes: 20,
   managerRecipients: Object.freeze([]),

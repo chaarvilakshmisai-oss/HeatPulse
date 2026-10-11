@@ -19,12 +19,13 @@ async function getAvailablePort() {
   return port;
 }
 
-async function startServer(port, dataFile) {
+async function startServer(port, dataFile, extraEnv = {}) {
   const child = spawn(process.execPath, [path.join(__dirname, "..", "dev-server.js")], {
     env: {
       ...process.env,
       PORT: String(port),
       HEATPULSE_DEV_DATA_FILE: dataFile,
+      ...extraEnv,
     },
     stdio: ["ignore", "ignore", "pipe"],
   });
@@ -284,4 +285,131 @@ test("local API persists multiple plants and plant-scoped workers across restart
   assert.equal(workersResponse.status, 200);
   assert.equal((await plantsResponse.json()).map((plant) => plant.plantId).includes(created.plantId), true);
   assert.equal((await workersResponse.json()).some((item) => item.workerId === worker.workerId), true);
+});
+
+test("local alert run creates one outbox email, suppresses duplicates, clears, and persists history", async (context) => {
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), "heatpulse-alerts-"));
+  context.after(() => fs.rmSync(directory, { recursive: true, force: true }));
+  const outbox = path.join(directory, "outbox");
+  const dataFile = path.join(directory, "dev-data.json");
+  const port = await getAvailablePort();
+  const baseUrl = `http://127.0.0.1:${port}`;
+  const env = {
+    ALERT_ACK_SECRET: "local-test-signing-secret",
+    ALERT_EMAIL_PROVIDER: "console",
+    ALERT_OUTBOX_DIR: outbox,
+    ALERT_INTERVAL_MS: "600000",
+  };
+  let child = await startServer(port, dataFile, env);
+  context.after(async () => stopServer(child));
+  const headers = { "content-type": "application/json" };
+  const plantPayload = {
+    name: "Alert plant",
+    lat: 12.3,
+    lon: 45.6,
+    radiusM: 300,
+    requireLocation: false,
+    timeZone: "UTC",
+    zones: [{
+      id: "furnace",
+      name: "Furnace Bay",
+      kind: "process",
+      roof: "metal",
+      ventilation: "poor",
+      headcount: 20,
+    }],
+  };
+  const createdResponse = await fetch(`${baseUrl}/plants`, {
+    method: "POST",
+    headers,
+    body: JSON.stringify(plantPayload),
+  });
+  assert.equal(createdResponse.status, 201);
+  const plant = await createdResponse.json();
+  const settings = {
+    enabled: true,
+    thresholds: { watch: 1, high: 2, critical: 100 },
+    cooldownMinutes: 30,
+    escalateAfterMinutes: 20,
+    managerRecipients: ["manager@example.test"],
+    workerAlertsEnabled: true,
+    smsEnabled: false,
+  };
+  const savedSettings = await fetch(`${baseUrl}/plants/${plant.plantId}/alert-settings`, {
+    method: "PUT",
+    headers,
+    body: JSON.stringify(settings),
+  });
+  assert.equal(savedSettings.status, 200);
+
+  const testResponse = await fetch(`${baseUrl}/plants/${plant.plantId}/alerts/test`, {
+    method: "POST",
+    headers,
+    body: JSON.stringify({ level: "high", zoneId: "furnace" }),
+  });
+  assert.equal(testResponse.status, 200);
+  assert.equal(fs.readdirSync(outbox).length, 1);
+  assert.match(fs.readFileSync(path.join(outbox, fs.readdirSync(outbox)[0]), "utf8"), /Furnace Bay/);
+
+  const firstRun = await fetch(`${baseUrl}/dev/run-alerts`, { method: "POST" });
+  assert.equal(firstRun.status, 200);
+  assert.equal((await firstRun.json()).createdAlerts, 1);
+  assert.equal(fs.readdirSync(outbox).length, 2);
+  const duplicateRun = await fetch(`${baseUrl}/dev/run-alerts`, { method: "POST" });
+  assert.equal((await duplicateRun.json()).createdAlerts, 0);
+  assert.equal(fs.readdirSync(outbox).length, 2);
+
+  const workerResponse = await fetch(`${baseUrl}/plants/${plant.plantId}/workers`, {
+    method: "POST",
+    headers,
+    body: JSON.stringify({
+      name: "Alert worker",
+      zoneId: "furnace",
+      shiftStart: "07:00",
+      shiftEnd: "15:00",
+    }),
+  });
+  const worker = await workerResponse.json();
+  const workerLogin = await fetch(`${baseUrl}/worker-login`, {
+    method: "POST",
+    headers,
+    body: JSON.stringify({ plantCode: plant.plantCode, workerId: worker.workerId }),
+  });
+  assert.equal((await workerLogin.json()).activeAlert.level, "high");
+
+  const coolerPlant = {
+    ...plantPayload,
+    zones: [{
+      ...plantPayload.zones[0],
+      kind: "cooled",
+      roof: "concrete",
+      ventilation: "good",
+      headcount: 0,
+    }],
+  };
+  const cooledResponse = await fetch(`${baseUrl}/plants/${plant.plantId}`, {
+    method: "PUT",
+    headers,
+    body: JSON.stringify(coolerPlant),
+  });
+  assert.equal(cooledResponse.status, 200);
+  const clearSettings = await fetch(`${baseUrl}/plants/${plant.plantId}/alert-settings`, {
+    method: "PUT",
+    headers,
+    body: JSON.stringify({
+      ...settings,
+      thresholds: { watch: 50, high: 60, critical: 80 },
+    }),
+  });
+  assert.equal(clearSettings.status, 200);
+  const clearRun = await fetch(`${baseUrl}/dev/run-alerts`, { method: "POST" });
+  assert.equal((await clearRun.json()).createdAlerts, 1);
+  assert.equal(fs.readdirSync(outbox).length, 3);
+
+  const alerts = await (await fetch(`${baseUrl}/plants/${plant.plantId}/alerts`)).json();
+  assert.deepEqual(alerts.filter((item) => !item.test).map((item) => item.level).sort(), ["clear", "high"]);
+  await stopServer(child);
+  child = await startServer(port, dataFile, env);
+  const persisted = await (await fetch(`${baseUrl}/plants/${plant.plantId}/alerts`)).json();
+  assert.equal(persisted.length, 3);
 });

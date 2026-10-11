@@ -14,6 +14,8 @@ const {
 const { estimateExposure } = require("./zones");
 const { validateBreakEvent, validateReport, validateSite, validateWorker } = require("./validate");
 const { defaultAlertSettings, validateAlertSettings } = require("./alert-settings");
+const { verifyAckToken } = require("./ack-token");
+const { notifyAlert } = require("./notifier");
 const { getWorkerPlan, localDateString, localDateTimeToUtc, shiftCandidates } = require("./breaks");
 const { toIso, twoHoursAgo, expiresAt7Days } = require("./time");
 
@@ -112,6 +114,22 @@ function managerWorker(worker) {
   return { ...publicWorker(worker), phone: worker.phone || "", smsConsent: worker.smsConsent === true };
 }
 
+function storedAlert(alert) {
+  const { zoneId, ...fields } = alert;
+  return {
+    zoneId: `ALERT#${alert.plantId}`,
+    ts: `ALERT#${alert.createdAt}#${alert.alertId}`,
+    entityType: "alert",
+    alertZoneId: zoneId,
+    ...fields,
+  };
+}
+
+function publicAlert(item) {
+  const { zoneId: partition, ts, entityType, alertZoneId, ...alert } = item;
+  return { ...alert, zoneId: alertZoneId };
+}
+
 function validZone(site, zoneId) {
   return site?.zones?.find((zone) => zone.id === zoneId);
 }
@@ -181,6 +199,20 @@ async function loadOwnedPlant(ownerId, plantId) {
   return plant?.ownerId === ownerId ? plant : null;
 }
 
+async function queryAllItems(input) {
+  const items = [];
+  let ExclusiveStartKey;
+  do {
+    const result = await doc.send(new QueryCommand({
+      ...input,
+      ...(ExclusiveStartKey ? { ExclusiveStartKey } : {}),
+    }));
+    items.push(...(result.Items || []));
+    ExclusiveStartKey = result.LastEvaluatedKey;
+  } while (ExclusiveStartKey);
+  return items;
+}
+
 async function getAlertSettings(event) {
   const plantId = event.pathParameters?.plantId;
   const result = await doc.send(new GetCommand({
@@ -212,7 +244,7 @@ async function saveAlertSettings(event) {
 
 async function getPlantAlerts(event) {
   const plantId = event.pathParameters?.plantId;
-  const result = await doc.send(new QueryCommand({
+  const items = await queryAllItems({
     TableName: TABLE_NAME,
     KeyConditionExpression: "zoneId = :zoneId AND begins_with(#ts, :alertPrefix)",
     ExpressionAttributeNames: { "#ts": "ts" },
@@ -221,8 +253,129 @@ async function getPlantAlerts(event) {
       ":alertPrefix": "ALERT#",
     },
     ScanIndexForward: false,
+  });
+  return json(200, items.map(publicAlert));
+}
+
+async function findPlantAlert(plantId, alertId) {
+  const items = await queryAllItems({
+    TableName: TABLE_NAME,
+    KeyConditionExpression: "zoneId = :zoneId AND begins_with(#ts, :alertPrefix)",
+    ExpressionAttributeNames: { "#ts": "ts" },
+    ExpressionAttributeValues: {
+      ":zoneId": `ALERT#${plantId}`,
+      ":alertPrefix": "ALERT#",
+    },
+  });
+  return items.find((item) => item.alertId === alertId) || null;
+}
+
+async function acknowledgeAlert(event, viaEmailLink = false) {
+  let plantId = event.pathParameters?.plantId;
+  let alertId = event.pathParameters?.alertId;
+  let acknowledgedBy = event.requestContext?.authorizer?.jwt?.claims?.ownerId
+    || managerId(event);
+  if (viaEmailLink) {
+    const token = verifyAckToken(event.queryStringParameters?.token);
+    if (!token) return json(404, { error: "Alert acknowledgement link is invalid or expired" });
+    plantId = token.plantId;
+    alertId = token.alertId;
+    acknowledgedBy = "email-link";
+  }
+  const item = await findPlantAlert(plantId, alertId);
+  if (!item || item.level === "clear") return json(404, { error: "Alert not found" });
+  const updated = {
+    ...item,
+    acknowledgedAt: item.acknowledgedAt || new Date().toISOString(),
+    acknowledgedBy: item.acknowledgedBy || acknowledgedBy || "manager",
+  };
+  await doc.send(new PutCommand({ TableName: TABLE_NAME, Item: updated }));
+  return json(200, { ok: true, alert: publicAlert(updated) });
+}
+
+async function sendTestAlert(event) {
+  const plantId = event.pathParameters?.plantId;
+  const parsed = parseBody(event);
+  if (!parsed.ok) return json(400, { error: parsed.error });
+  const { level, zoneId } = parsed.value;
+  if (!["watch", "high", "critical"].includes(level)) {
+    return json(400, { error: "level must be watch, high, or critical" });
+  }
+  const plant = await loadSite(plantId);
+  const settingsResult = await doc.send(new GetCommand({
+    TableName: TABLE_NAME,
+    Key: { zoneId: sitePartition(plantId), ts: "ALERT_SETTINGS" },
   }));
-  return json(200, result.Items || []);
+  const settings = settingsResult.Item?.settings || defaultAlertSettings(plantId);
+  if (!settings.managerRecipients?.length) {
+    return json(400, { error: "Add a manager recipient before sending a test alert" });
+  }
+  const zone = plant.zones.find((item) => item.id === zoneId) || plant.zones[0];
+  if (!zone) return json(400, { error: "Add a zone before sending a test alert" });
+  const workersResult = await doc.send(new QueryCommand({
+    TableName: TABLE_NAME,
+    KeyConditionExpression: "zoneId = :zoneId AND begins_with(#ts, :workerPrefix)",
+    ExpressionAttributeNames: { "#ts": "ts" },
+    ExpressionAttributeValues: {
+      ":zoneId": sitePartition(plantId),
+      ":workerPrefix": "WORKER#",
+    },
+  }));
+  const alert = {
+    alertId: randomUUID(),
+    plantId,
+    zoneId: zone.id,
+    level,
+    score: settings.thresholds[level],
+    createdAt: new Date().toISOString(),
+    acknowledgedAt: null,
+    acknowledgedBy: null,
+    deliveries: [],
+    test: true,
+    plantName: plant.name,
+    zoneName: zone.name,
+    workersAssigned: (workersResult.Items || [])
+      .filter((worker) => worker.active && worker.workerZoneId === zone.id)
+      .map((worker) => worker.name),
+  };
+  await doc.send(new PutCommand({ TableName: TABLE_NAME, Item: storedAlert(alert) }));
+  const deliveries = await notifyAlert(alert, {
+    plant,
+    zone,
+    workers: [],
+    recipients: settings.managerRecipients,
+    settings,
+    action: "test",
+  });
+  alert.deliveries = deliveries;
+  await doc.send(new PutCommand({ TableName: TABLE_NAME, Item: storedAlert(alert) }));
+  return json(200, { alert: publicAlert(storedAlert(alert)), deliveries });
+}
+
+async function getActiveWorkerAlert(plantId, zoneId) {
+  const [settingsResult, alertItems] = await Promise.all([
+    doc.send(new GetCommand({
+      TableName: TABLE_NAME,
+      Key: { zoneId: sitePartition(plantId), ts: "ALERT_SETTINGS" },
+    })),
+    queryAllItems({
+      TableName: TABLE_NAME,
+      KeyConditionExpression: "zoneId = :zoneId AND begins_with(#ts, :alertPrefix)",
+      ExpressionAttributeNames: { "#ts": "ts" },
+      ExpressionAttributeValues: {
+        ":zoneId": `ALERT#${plantId}`,
+        ":alertPrefix": "ALERT#",
+      },
+      ScanIndexForward: false,
+    }),
+  ]);
+  if (!settingsResult.Item?.settings?.enabled || !settingsResult.Item.settings.workerAlertsEnabled) return null;
+  const last = alertItems
+    .map(publicAlert)
+    .filter((alert) => alert.zoneId === zoneId && !alert.test)
+    .sort((left, right) => right.createdAt.localeCompare(left.createdAt))[0];
+  if (!last || !["high", "critical"].includes(last.level)) return null;
+  return { level: last.level, score: last.score };
 }
 
 async function listOwnerPlants(ownerId) {
@@ -438,7 +591,15 @@ async function withOwnedPlant(event, handler, deactivate = false) {
     ...event,
     requestContext: {
       ...event.requestContext,
-      authorizer: { jwt: { claims: { ...event.requestContext?.authorizer?.jwt?.claims, sub: plantId } } },
+      authorizer: {
+        jwt: {
+          claims: {
+            ...event.requestContext?.authorizer?.jwt?.claims,
+            ownerId,
+            sub: plantId,
+          },
+        },
+      },
     },
   };
   return handler(scopedEvent, deactivate);
@@ -505,6 +666,7 @@ async function workerLogin(event) {
     shift: plan.shift,
     nextBreak: plan.nextBreak,
     breakStatus: plan.breakStatus,
+    activeAlert: zone ? await getActiveWorkerAlert(plant.plantId, zone.id) : null,
     sessionToken,
     expiresAt,
   });
@@ -864,7 +1026,10 @@ async function getPublicWorkerPlan(event) {
   if (!site || !zone || !worker?.active || worker.workerZoneId !== zoneId) return genericWorkerNotFound();
   const events = await workerBreakEvents(siteId, workerId);
   const scoredZone = { ...zone, recentTooHotTaps: await recentTooHotCount(siteId, zone) };
-  return json(200, getWorkerPlan({ ...worker, zone: scoredZone }, site.timeZone || "Asia/Kolkata", events));
+  return json(200, {
+    ...getWorkerPlan({ ...worker, zone: scoredZone }, site.timeZone || "Asia/Kolkata", events),
+    activeAlert: await getActiveWorkerAlert(siteId, zoneId),
+  });
 }
 
 async function getPublicWorkerPlanById(event) {
@@ -875,7 +1040,10 @@ async function getPublicWorkerPlanById(event) {
   if (!site || !worker?.active || !zone) return genericWorkerNotFound();
   const events = await workerBreakEvents(siteId, workerId);
   const scoredZone = { ...zone, recentTooHotTaps: await recentTooHotCount(siteId, zone) };
-  return json(200, getWorkerPlan({ ...worker, zone: scoredZone }, site.timeZone || "Asia/Kolkata", events));
+  return json(200, {
+    ...getWorkerPlan({ ...worker, zone: scoredZone }, site.timeZone || "Asia/Kolkata", events),
+    activeAlert: zone ? await getActiveWorkerAlert(siteId, zone.id) : null,
+  });
 }
 
 async function recordPublicBreak(event) {
@@ -1103,6 +1271,7 @@ exports.handler = async (event) => {
       return { statusCode: 204, headers: HEADERS, body: "" };
     }
     if (routeKey === "GET /health") return json(200, { ok: true });
+    if (routeKey === "GET /alerts/ack") return acknowledgeAlert(event, true);
     if (routeKey === "GET /plants") return getPlants(event);
     if (routeKey === "POST /plants") return createPlant(event);
     if (routeKey === "GET /plants/{plantId}") return getPlant(event);
@@ -1115,6 +1284,10 @@ exports.handler = async (event) => {
     if (routeKey === "GET /plants/{plantId}/alert-settings") return withOwnedPlant(event, getAlertSettings);
     if (routeKey === "PUT /plants/{plantId}/alert-settings") return withOwnedPlant(event, saveAlertSettings);
     if (routeKey === "GET /plants/{plantId}/alerts") return withOwnedPlant(event, getPlantAlerts);
+    if (routeKey === "POST /plants/{plantId}/alerts/test") return withOwnedPlant(event, sendTestAlert);
+    if (routeKey === "POST /plants/{plantId}/alerts/{alertId}/ack") {
+      return withOwnedPlant(event, acknowledgeAlert);
+    }
     if (routeKey === "POST /plants/{plantId}/workers") return withOwnedPlant(event, createWorker);
     if (routeKey === "PUT /plants/{plantId}/workers/{workerId}") return withOwnedPlant(event, updateWorker);
     if (routeKey === "DELETE /plants/{plantId}/workers/{workerId}") return withOwnedPlant(event, updateWorker, true);

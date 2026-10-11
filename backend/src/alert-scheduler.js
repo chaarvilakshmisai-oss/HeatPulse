@@ -17,11 +17,20 @@ const TABLE_NAME = process.env.TABLE_NAME;
 const doc = DynamoDBDocumentClient.from(new DynamoDBClient({}));
 const HOURLY_START = 7;
 
-function keyForAlert(alert) {
+function storedAlert(alert) {
+  const { zoneId, ...fields } = alert;
   return {
     zoneId: `ALERT#${alert.plantId}`,
     ts: `ALERT#${alert.createdAt}#${alert.alertId}`,
+    entityType: "alert",
+    alertZoneId: zoneId,
+    ...fields,
   };
+}
+
+function loadedAlert(item) {
+  const { alertZoneId, ...fields } = item;
+  return { ...fields, zoneId: alertZoneId };
 }
 
 function localHour(date, timeZone) {
@@ -37,6 +46,20 @@ async function queryAll(input, documentClient) {
   let ExclusiveStartKey;
   do {
     const result = await documentClient.send(new QueryCommand({
+      ...input,
+      ...(ExclusiveStartKey ? { ExclusiveStartKey } : {}),
+    }));
+    items.push(...(result.Items || []));
+    ExclusiveStartKey = result.LastEvaluatedKey;
+  } while (ExclusiveStartKey);
+  return items;
+}
+
+async function scanAll(input, documentClient) {
+  const items = [];
+  let ExclusiveStartKey;
+  do {
+    const result = await documentClient.send(new ScanCommand({
       ...input,
       ...(ExclusiveStartKey ? { ExclusiveStartKey } : {}),
     }));
@@ -82,12 +105,11 @@ async function runAlertSweep({
   notifier = (...args) => require("./notifier").notifyAlert(...args),
 } = {}) {
   const timestamp = now.toISOString();
-  const plantResult = await documentClient.send(new ScanCommand({
+  const plants = await scanAll({
     TableName: tableName,
     FilterExpression: "entityType = :plant",
     ExpressionAttributeValues: { ":plant": "plant" },
-  }));
-  const plants = plantResult.Items || [];
+  }, documentClient);
   let checkedZones = 0;
   let createdAlerts = 0;
   let deliveries = 0;
@@ -123,7 +145,8 @@ async function runAlertSweep({
       }, documentClient),
     ]);
     const lastByZone = new Map();
-    for (const alert of alertItems.sort((left, right) => right.createdAt.localeCompare(left.createdAt))) {
+    for (const alert of alertItems.map(loadedAlert).filter((item) => !item.test)
+      .sort((left, right) => right.createdAt.localeCompare(left.createdAt))) {
       if (!lastByZone.has(alert.zoneId)) lastByZone.set(alert.zoneId, alert);
     }
     const hourIndex = Math.max(0, Math.min(11, localHour(now, settings.timeZone) - HOURLY_START));
@@ -175,7 +198,7 @@ async function runAlertSweep({
       if (decision.action !== "escalate") {
         await documentClient.send(new PutCommand({
           TableName: tableName,
-          Item: { ...keyForAlert(alert), entityType: "alert", ...alert },
+          Item: storedAlert(alert),
         }));
         createdAlerts += 1;
       }
@@ -184,7 +207,7 @@ async function runAlertSweep({
       deliveries += sent.length;
       await documentClient.send(new PutCommand({
         TableName: tableName,
-        Item: { ...keyForAlert(alert), entityType: "alert", ...alert },
+        Item: storedAlert(alert),
       }));
     }
   }

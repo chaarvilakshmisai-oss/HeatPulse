@@ -345,6 +345,24 @@ export async function getPlantAlerts(plantId) {
   return request(`/plants/${encodeURIComponent(plantId)}/alerts`, {}, true);
 }
 
+export async function sendTestAlert(plantId, level, zoneId) {
+  return request(`/plants/${encodeURIComponent(plantId)}/alerts/test`, {
+    method: 'POST',
+    body: JSON.stringify({ level, ...(zoneId ? { zoneId } : {}) }),
+  }, true);
+}
+
+export async function acknowledgePlantAlert(plantId, alertId) {
+  return request(`/plants/${encodeURIComponent(plantId)}/alerts/${encodeURIComponent(alertId)}/ack`, {
+    method: 'POST',
+    body: JSON.stringify({}),
+  }, true);
+}
+
+export async function acknowledgeEmailAlert(token) {
+  return request(`/alerts/ack?token=${encodeURIComponent(token)}`);
+}
+
 export async function findWorkerPlant(workerId, plantCode) {
   const query = new URLSearchParams({ workerId: workerId.trim().toUpperCase() });
   if (plantCode?.trim()) query.set('plantCode', plantCode.trim().toUpperCase());

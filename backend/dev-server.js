@@ -118,7 +118,7 @@ const fakeLib = {
           const partitionAttribute = input.IndexName ? indexKey(null, input.IndexName) : "zoneId";
           const partition = values[":zoneId"] || values[":owner"] || values[":workerKey"] || values[":day"] || values[":z"];
           const since = values[":since"];
-          const prefix = values[":reportPrefix"] || values[":workerPrefix"] || values[":breakPrefix"];
+          const prefix = values[":reportPrefix"] || values[":workerPrefix"] || values[":breakPrefix"] || values[":alertPrefix"];
           const sortAttribute = input.IndexName === "WorkerBreaksIndex"
             ? "gsi1sk"
             : input.IndexName === "BreaksByPlantDayIndex" ? "gsi2sk" : "ts";
@@ -178,6 +178,11 @@ function publicSiteId(path) {
 
 function routeKey(method, path) {
   if (path.startsWith("/public/sites/")) return `${method} /public/sites/{siteId}`;
+  if (path === "/alerts/ack") return `${method} /alerts/ack`;
+  if (/^\/plants\/[^/]+\/alerts\/test$/.test(path)) return `${method} /plants/{plantId}/alerts/test`;
+  if (/^\/plants\/[^/]+\/alerts\/[^/]+\/ack$/.test(path)) {
+    return `${method} /plants/{plantId}/alerts/{alertId}/ack`;
+  }
   if (path === "/workers/lookup") return `${method} /workers/lookup`;
   if (/^\/plants\/[^/]+\/workers\/[^/]+$/.test(path)) return `${method} /plants/{plantId}/workers/{workerId}`;
   if (/^\/plants\/[^/]+\/workers$/.test(path)) return `${method} /plants/{plantId}/workers`;
@@ -248,6 +253,7 @@ const server = http.createServer((request, response) => {
       return;
     }
     const nestedPlantMatch = path.match(/^\/plants\/([^/]+)(?:\/workers(?:\/([^/]+))?|\/(zones|reports|breaks|alerts|alert-settings))?$/);
+    const plantAlertMatch = path.match(/^\/plants\/([^/]+)\/alerts\/([^/]+)(?:\/ack)?$/);
     const publicWorkerMatch = path.match(/^\/public\/workers\/([^/]+)\/([^/]+)\/([^/]+)(?:\/breaks)?$/);
     const publicWorkerByIdMatch = path.match(/^\/public\/workers\/([^/]+)\/([^/]+)$/);
     const workerMatch = path.match(/^\/workers\/([^/]+)$/);
@@ -255,7 +261,9 @@ const server = http.createServer((request, response) => {
       routeKey: key,
       rawPath: path,
       pathParameters: {
-        plantId: nestedPlantMatch?.[1] ? decodeURIComponent(nestedPlantMatch[1]) : undefined,
+        plantId: nestedPlantMatch?.[1] || plantAlertMatch?.[1]
+          ? decodeURIComponent(nestedPlantMatch?.[1] || plantAlertMatch?.[1])
+          : undefined,
         workerId: nestedPlantMatch?.[2] ? decodeURIComponent(nestedPlantMatch[2]) : undefined,
         siteId: publicSiteId(path)
           || (publicWorkerMatch ? decodeURIComponent(publicWorkerMatch[1]) : undefined)
@@ -266,6 +274,9 @@ const server = http.createServer((request, response) => {
           : publicWorkerByIdMatch
             ? decodeURIComponent(publicWorkerByIdMatch[2])
             : workerMatch ? decodeURIComponent(workerMatch[1]) : undefined,
+        alertId: plantAlertMatch?.[2] && plantAlertMatch[2] !== "test"
+          ? decodeURIComponent(plantAlertMatch[2])
+          : undefined,
       },
       queryStringParameters: Object.fromEntries(url.searchParams),
       body: body || undefined,

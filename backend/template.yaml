@@ -13,6 +13,41 @@ Parameters:
     Type: String
     Default: "*"
     Description: Frontend origin allowed by API Gateway CORS
+  AlertEmailProvider:
+    Type: String
+    Default: console
+    AllowedValues: [console, smtp, ses]
+    Description: Provider used for manager alert email delivery
+  AlertSmsProvider:
+    Type: String
+    Default: console
+    AllowedValues: [console, sns]
+    Description: Provider used for consented worker SMS delivery
+  AlertFromAddress:
+    Type: String
+    Default: alerts@example.invalid
+    Description: Verified sender address when using SES
+  AlertAckSecret:
+    Type: String
+    NoEcho: true
+    Description: Secret used to sign expiring alert acknowledgement tokens
+  AlertDashboardUrl:
+    Type: String
+    Default: https://example.invalid
+    Description: Frontend origin used in alert emails
+  SmtpHost:
+    Type: String
+    Default: ""
+  SmtpPort:
+    Type: String
+    Default: "587"
+  SmtpUser:
+    Type: String
+    Default: ""
+  SmtpPass:
+    Type: String
+    NoEcho: true
+    Default: ""
 
 Globals:
   Function:
@@ -21,6 +56,18 @@ Globals:
       - arm64
     MemorySize: 256
     Timeout: 15
+    Environment:
+      Variables:
+        ALERT_EMAIL_PROVIDER: !Ref AlertEmailProvider
+        ALERT_SMS_PROVIDER: !Ref AlertSmsProvider
+        ALERT_FROM: !Ref AlertFromAddress
+        ALERT_ACK_SECRET: !Ref AlertAckSecret
+        ALERT_API_BASE_URL: !Sub "https://${HttpApi}.execute-api.${AWS::Region}.amazonaws.com"
+        ALERT_DASHBOARD_URL: !Ref AlertDashboardUrl
+        SMTP_HOST: !Ref SmtpHost
+        SMTP_PORT: !Ref SmtpPort
+        SMTP_USER: !Ref SmtpUser
+        SMTP_PASS: !Ref SmtpPass
 
 Resources:
   ReportsTable:
@@ -119,6 +166,17 @@ Resources:
               Action:
                 - dynamodb:TransactWriteItems
               Resource: !GetAtt ReportsTable.Arn
+            - Effect: Allow
+              Action:
+                - ses:SendEmail
+              Resource: !Sub "arn:${AWS::Partition}:ses:${AWS::Region}:${AWS::AccountId}:identity/${AlertFromAddress}"
+            - Effect: Allow
+              Action:
+                - sns:Publish
+              Resource: "*"
+              Condition:
+                StringEquals:
+                  aws:RequestedRegion: !Ref AWS::Region
       Events:
         Plants:
           Type: HttpApi
@@ -216,6 +274,28 @@ Resources:
             Method: GET
             Auth:
               Authorizer: CognitoJwtAuthorizer
+        TestPlantAlert:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref HttpApi
+            Path: /plants/{plantId}/alerts/test
+            Method: POST
+            Auth:
+              Authorizer: CognitoJwtAuthorizer
+        AcknowledgePlantAlert:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref HttpApi
+            Path: /plants/{plantId}/alerts/{alertId}/ack
+            Method: POST
+            Auth:
+              Authorizer: CognitoJwtAuthorizer
+        EmailAlertAcknowledgement:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref HttpApi
+            Path: /alerts/ack
+            Method: GET
         WorkerLogin:
           Type: HttpApi
           Properties:
@@ -378,6 +458,18 @@ Resources:
             TableName: !Ref ReportsTable
         - DynamoDBWritePolicy:
             TableName: !Ref ReportsTable
+        - Statement:
+            - Effect: Allow
+              Action:
+                - ses:SendEmail
+              Resource: !Sub "arn:${AWS::Partition}:ses:${AWS::Region}:${AWS::AccountId}:identity/${AlertFromAddress}"
+            - Effect: Allow
+              Action:
+                - sns:Publish
+              Resource: "*"
+              Condition:
+                StringEquals:
+                  aws:RequestedRegion: !Ref AWS::Region
       Events:
         EveryTenMinutes:
           Type: Schedule

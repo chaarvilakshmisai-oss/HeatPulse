@@ -3,6 +3,7 @@
 const test = require("node:test");
 const assert = require("node:assert/strict");
 const Module = require("node:module");
+const { createAckToken } = require("../src/ack-token");
 
 const rows = new Map();
 
@@ -78,7 +79,7 @@ const fakeDynamo = {
             ? "gsi1sk"
             : input.IndexName === "BreaksByPlantDayIndex" ? "gsi2sk" : "ts";
           let matches = [...rows.values()].filter((item) => item[partitionAttribute] === partition);
-          const prefix = values[":reportPrefix"] || values[":workerPrefix"] || values[":breakPrefix"];
+          const prefix = values[":reportPrefix"] || values[":workerPrefix"] || values[":breakPrefix"] || values[":alertPrefix"];
           if (prefix) matches = matches.filter((item) => item[sortAttribute].startsWith(prefix));
           if (values[":since"]) matches = matches.filter((item) => item.ts >= values[":since"]);
           matches.sort((left, right) => left[sortAttribute].localeCompare(right[sortAttribute]));
@@ -119,11 +120,11 @@ const siteInput = {
   zones: [zoneInput],
 };
 
-function event(routeKey, { body, siteId, plantId, zoneId, workerId, query, sub = managerSub } = {}) {
+function event(routeKey, { body, siteId, plantId, zoneId, workerId, alertId, query, sub = managerSub } = {}) {
   return {
     routeKey,
     body: body === undefined ? undefined : JSON.stringify(body),
-    pathParameters: { siteId, plantId, zoneId, workerId },
+    pathParameters: { siteId, plantId, zoneId, workerId, alertId },
     queryStringParameters: query || {},
     requestContext: {
       authorizer: sub ? { jwt: { claims: { sub } } } : undefined,
@@ -199,6 +200,67 @@ test("plant CRUD scopes access to the owner and generates a private short code",
   const worker = await invoke("POST /plants/{plantId}/workers", {
     plantId,
     body: { name: "Scoped worker", zoneId: created.body.zones[0].id, shiftStart: "07:00", shiftEnd: "15:00" },
+  });
+
+  test("alert settings, history, testing, and acknowledgement stay scoped to the owning manager", async (t) => {
+    const originalSecret = process.env.ALERT_ACK_SECRET;
+    const originalProvider = process.env.ALERT_EMAIL_PROVIDER;
+    process.env.ALERT_ACK_SECRET = "test-alert-signing-secret";
+    process.env.ALERT_EMAIL_PROVIDER = "unsupported";
+    t.after(() => {
+      if (originalSecret === undefined) delete process.env.ALERT_ACK_SECRET;
+      else process.env.ALERT_ACK_SECRET = originalSecret;
+      if (originalProvider === undefined) delete process.env.ALERT_EMAIL_PROVIDER;
+      else process.env.ALERT_EMAIL_PROVIDER = originalProvider;
+    });
+
+    const created = await invoke("POST /plants", { body: siteInput });
+    const plantId = created.body.plantId;
+    const zoneId = created.body.zones[0].id;
+    const defaults = await invoke("GET /plants/{plantId}/alert-settings", { plantId });
+    assert.equal(defaults.status, 200);
+    assert.deepEqual(defaults.body.thresholds, { watch: 40, high: 60, critical: 80 });
+
+    const settings = await invoke("PUT /plants/{plantId}/alert-settings", {
+      plantId,
+      body: {
+        ...defaults.body,
+        enabled: true,
+        managerRecipients: ["manager@example.test"],
+        workerAlertsEnabled: true,
+      },
+    });
+    assert.equal(settings.status, 200);
+    assert.equal((await invoke("GET /plants/{plantId}/alerts", { plantId })).body.length, 0);
+
+    const otherManager = "alert-other-owner";
+    assert.equal((await invoke("GET /plants/{plantId}/alert-settings", { plantId, sub: otherManager })).status, 404);
+    assert.equal((await invoke("PUT /plants/{plantId}/alert-settings", {
+      plantId,
+      sub: otherManager,
+      body: settings.body,
+    })).status, 404);
+    assert.equal((await invoke("GET /plants/{plantId}/alerts", { plantId, sub: otherManager })).status, 404);
+
+    const testAlert = await invoke("POST /plants/{plantId}/alerts/test", {
+      plantId,
+      body: { level: "high", zoneId },
+    });
+    assert.equal(testAlert.status, 200);
+    assert.equal(testAlert.body.alert.level, "high");
+    assert.equal(testAlert.body.alert.zoneId, zoneId);
+    assert.deepEqual(testAlert.body.deliveries.map((delivery) => delivery.status), ["failed"]);
+    assert.equal((await invoke("GET /plants/{plantId}/alerts", { plantId })).body.length, 1);
+
+    const token = createAckToken(testAlert.body.alert, process.env.ALERT_ACK_SECRET);
+    const acknowledged = await invoke("GET /alerts/ack", { query: { token }, sub: null });
+    assert.equal(acknowledged.status, 200);
+    assert.equal(acknowledged.body.alert.acknowledgedBy, "email-link");
+    assert.equal((await invoke("POST /plants/{plantId}/alerts/{alertId}/ack", {
+      plantId,
+      alertId: testAlert.body.alert.alertId,
+      sub: otherManager,
+    })).status, 404);
   });
   assert.equal(worker.status, 201);
   assert.equal((await invoke("GET /plants/{plantId}/workers", { plantId })).body[0].workerId, worker.body.workerId);
@@ -409,7 +471,8 @@ async function createTestWorker(overrides = {}) {
       workerId: created.body.workerId,
     });
     assert.equal(valid.status, 200);
-    assert.deepEqual(Object.keys(valid.body).sort(), ["breakStatus", "nextBreak", "shift"]);
+    assert.deepEqual(Object.keys(valid.body).sort(), ["activeAlert", "breakStatus", "nextBreak", "shift"]);
+    assert.equal(valid.body.activeAlert, null);
 
     const unknown = await invoke("GET /public/workers/{siteId}/{workerId}", {
       siteId: managerSub,
@@ -439,7 +502,8 @@ async function createTestWorker(overrides = {}) {
       workerId,
     });
     assert.equal(plan.status, 200);
-    assert.deepEqual(Object.keys(plan.body).sort(), ["breakStatus", "nextBreak", "shift"]);
+    assert.deepEqual(Object.keys(plan.body).sort(), ["activeAlert", "breakStatus", "nextBreak", "shift"]);
+    assert.equal(plan.body.activeAlert, null);
     assert.ok(plan.body.nextBreak);
     const payload = {
       scheduledAt: plan.body.nextBreak.scheduledAt,
