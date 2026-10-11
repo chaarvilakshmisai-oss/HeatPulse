@@ -35,6 +35,31 @@ describe('manager form validation', () => {
     })).toEqual({});
   });
 
+  it('rejects empty coordinates and the default 0,0 coordinates', () => {
+    const requiredErrors = validateSite({
+      name: 'Plant 1',
+      lat: '',
+      lon: '',
+      radiusM: 300,
+      timeZone: 'Asia/Kolkata',
+    });
+    expect(requiredErrors).toMatchObject({
+      lat: 'Enter a latitude from -90 to 90.',
+      lon: 'Enter a longitude from -180 to 180.',
+    });
+
+    expect(validateSite({
+      name: 'Plant 1',
+      lat: '0',
+      lon: '0',
+      radiusM: 300,
+      timeZone: 'Asia/Kolkata',
+    })).toMatchObject({
+      lat: 'Plant coordinates cannot be 0, 0.',
+      lon: 'Plant coordinates cannot be 0, 0.',
+    });
+  });
+
   it('validates a worker name, zone, and recurring shift times', () => {
     expect(validateWorker({ name: '', zoneId: '', shiftStart: '25:00', shiftEnd: '08:30' })).toMatchObject({
       name: expect.any(String),

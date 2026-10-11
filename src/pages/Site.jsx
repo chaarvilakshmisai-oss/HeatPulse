@@ -45,6 +45,7 @@ export default function Site() {
   const [success, setSuccess] = useState('');
   const [loadError, setLoadError] = useState('');
   const [loadAttempt, setLoadAttempt] = useState(0);
+  const [dirty, setDirty] = useState(false);
 
   useEffect(() => {
     let active = true;
@@ -52,7 +53,10 @@ export default function Site() {
     setLoadError('');
     getSite()
       .then((result) => {
-        if (active && result) setSite({ ...INITIAL_SITE, ...result });
+        if (active && result) {
+          setSite({ ...INITIAL_SITE, ...result });
+          setDirty(false);
+        }
       })
       .catch((requestError) => {
         if (active) {
@@ -67,6 +71,31 @@ export default function Site() {
       active = false;
     };
   }, [loadAttempt]);
+
+  useEffect(() => {
+    if (!dirty) return undefined;
+    function warnBeforeUnload(event) {
+      event.preventDefault();
+      event.returnValue = '';
+    }
+    function guardNavigation(event) {
+      const target = event.target;
+      const link = target instanceof Element ? target.closest('a[href]') : null;
+      if (!link || link.origin !== window.location.origin || link.pathname === window.location.pathname) return;
+      if (!window.confirm('You have unsaved plant changes. Leave without saving?')) {
+        event.preventDefault();
+        event.stopPropagation();
+      } else {
+        setDirty(false);
+      }
+    }
+    window.addEventListener('beforeunload', warnBeforeUnload);
+    document.addEventListener('click', guardNavigation, true);
+    return () => {
+      window.removeEventListener('beforeunload', warnBeforeUnload);
+      document.removeEventListener('click', guardNavigation, true);
+    };
+  }, [dirty]);
 
   useEffect(() => {
     let active = true;
@@ -92,6 +121,7 @@ export default function Site() {
   }, []);
 
   function update(field, value) {
+    setDirty(true);
     setSite((current) => ({ ...current, [field]: value }));
     setErrors((current) => ({ ...current, [field]: undefined }));
     setError('');
@@ -145,6 +175,7 @@ export default function Site() {
         lon: String(position.lon),
         locationVerifiedAt: null,
       }));
+      setDirty(true);
       setLocationCheck(null);
       setSuccess('');
     } catch {
@@ -157,6 +188,7 @@ export default function Site() {
     const savedSite = await getSite();
     if (!savedSite) throw new Error('The saved plant could not be reloaded.');
     setSite({ ...INITIAL_SITE, ...savedSite });
+    setDirty(false);
     setLocationCheck(deviceLocation ? result.locationCheck || null : null);
     setSuccess(deviceLocation ? 'Plant location check completed.' : 'Plant details saved.');
   }
@@ -185,6 +217,7 @@ export default function Site() {
       const savedSite = await getSite();
       if (!savedSite) throw new Error('The saved plant could not be reloaded.');
       setSite({ ...INITIAL_SITE, ...savedSite });
+      setDirty(false);
       setLocationCheck(result.locationCheck || null);
       setSuccess(result.locationCheck?.status === 'verified' ? 'Location verified.' : '');
     } catch (verifyError) {

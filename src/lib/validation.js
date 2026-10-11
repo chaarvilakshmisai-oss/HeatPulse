@@ -29,6 +29,13 @@ export function validateSite(site) {
   if (String(site.lon ?? '').trim() === '' || !Number.isFinite(longitude) || longitude < -180 || longitude > 180) {
     errors.lon = 'Enter a longitude from -180 to 180.';
   }
+  if (String(site.lat ?? '').trim() !== ''
+    && String(site.lon ?? '').trim() !== ''
+    && latitude === 0
+    && longitude === 0) {
+    errors.lat = 'Plant coordinates cannot be 0, 0.';
+    errors.lon = 'Plant coordinates cannot be 0, 0.';
+  }
   if (!Number.isInteger(Number(site.radiusM)) || site.radiusM < 50 || site.radiusM > 2000) {
     errors.radiusM = 'Allowed radius must be from 50 to 2000 metres.';
   }
