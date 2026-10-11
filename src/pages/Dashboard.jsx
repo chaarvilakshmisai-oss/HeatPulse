@@ -6,6 +6,7 @@ import Header from '../components/Header.jsx';
 import KpiCard from '../components/KpiCard.jsx';
 import ShiftPlan from '../components/ShiftPlan.jsx';
 import ZoneGrid from '../components/ZoneGrid.jsx';
+import { HOURLY_CURVE } from '../data/mock.js';
 import { getZones } from '../lib/api.js';
 import { isDemoMode } from '../lib/auth.js';
 import { summarizeDashboard } from '../lib/dashboard.js';

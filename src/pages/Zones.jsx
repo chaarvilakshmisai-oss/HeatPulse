@@ -102,6 +102,9 @@ export default function Zones() {
     let active = true;
     setLoading(true);
     setLoadError('');
+    setError('');
+    setSite(null);
+    setZones([]);
     getSite(plantId)
       .then((result) => {
         if (!active) return;

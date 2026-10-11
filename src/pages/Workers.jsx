@@ -37,6 +37,7 @@ export default function Workers() {
     let active = true;
     setLoading(true);
     setLoadError('');
+    setError('');
     Promise.all([getSite(plantId), getZones(plantId), getWorkers(plantId)])
       .then(([siteResult, zoneResult, workerResult]) => {
         if (!active) return;
@@ -124,30 +125,38 @@ export default function Workers() {
     } catch (copyError) {
       setError(copyError.message || 'Unable to copy the worker ID. Select and copy it manually.');
     }
+  }
 
-    async function lookup(event) {
-      event.preventDefault();
-      setLookupError('');
-      setLookupResults(null);
-      try {
-        const result = await findWorkerPlant(lookupId);
-        setLookupResults(result.matches);
-      } catch (requestError) {
-        setLookupError(requestError.message || 'Unable to find this worker.');
-      }
+  async function lookup(event) {
+    event.preventDefault();
+    setLookupError('');
+    setLookupResults(null);
+    try {
+      const result = await findWorkerPlant(lookupId);
+      setLookupResults(result.matches);
+    } catch (requestError) {
+      setLookupError(requestError.message || 'Unable to find this worker.');
     }
+  }
 
-    async function copyPlantCode() {
-      try {
-        await navigator.clipboard.writeText(site.plantCode);
-        setSuccess(`Copied ${site.plantCode}.`);
-      } catch (copyError) {
-        setError(copyError.message || 'Unable to copy the plant code.');
-      }
+  async function copyPlantCode() {
+    try {
+      await navigator.clipboard.writeText(site.plantCode);
+      setSuccess(`Copied ${site.plantCode}.`);
+    } catch (copyError) {
+      setError(copyError.message || 'Unable to copy the plant code.');
     }
   }
 
   if (loading) return <div className="card page-state" role="status">Loading workers…</div>;
+  if (loadError) {
+    return (
+      <section className="card page-state">
+        <p role="alert">{loadError}</p>
+        <button type="button" className="secondary-button" onClick={() => setLoadAttempt((attempt) => attempt + 1)}>Retry loading workers</button>
+      </section>
+    );
+  }
 
   return (
     <section className="manager-page">
@@ -173,7 +182,6 @@ export default function Workers() {
           : <p>No matching worker found in your plants.</p>)}
       </form>
       {error && <p className="form-error" role="alert">{error}</p>}
-      {loadError && <button type="button" className="secondary-button" onClick={() => setLoadAttempt((attempt) => attempt + 1)}>Retry loading workers</button>}
       {success && <p className="success-message" role="status">{success}</p>}
       <form className="card form-card" onSubmit={submit}>
         <h2>{editingId ? `Edit ${editingId}` : 'Add worker'}</h2>
