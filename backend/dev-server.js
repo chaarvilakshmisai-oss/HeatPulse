@@ -189,11 +189,13 @@ const server = http.createServer((request, response) => {
 
     const key = routeKey(request.method, path);
     const ip = request.socket.remoteAddress || "unknown";
-    if (key.startsWith("GET /public/workers/") || key.startsWith("POST /public/workers/")) {
+    const isPublicReport = key === "POST /report";
+    if (isPublicReport || key.startsWith("GET /public/workers/") || key.startsWith("POST /public/workers/")) {
+      const rateLimitKey = `${ip}:${isPublicReport ? "reports" : "workers"}`;
       const now = Date.now();
-      const current = publicRequestWindows.get(ip);
+      const current = publicRequestWindows.get(rateLimitKey);
       if (!current || now - current.startedAt >= PUBLIC_WINDOW_MS) {
-        publicRequestWindows.set(ip, { startedAt: now, count: 1 });
+        publicRequestWindows.set(rateLimitKey, { startedAt: now, count: 1 });
       } else if (current.count >= PUBLIC_REQUEST_LIMIT) {
         response.writeHead(429, { ...CORS, "content-type": "application/json" });
         response.end(JSON.stringify({ error: "Too many requests. Please wait and try again." }));

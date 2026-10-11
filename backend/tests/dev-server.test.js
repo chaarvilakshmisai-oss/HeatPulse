@@ -106,3 +106,18 @@ test("local API keeps the manager site across a backend restart", async (context
   assert.equal(restartedSite.zones.length, 1);
   assert.equal(restartedSite.zones[0].name, "Furnace");
 });
+
+test("local API rate limits public worker reports by source IP", async (context) => {
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), "heatpulse-dev-rate-limit-"));
+  context.after(() => fs.rmSync(directory, { recursive: true, force: true }));
+  const port = await getAvailablePort();
+  const child = await startServer(port, path.join(directory, "local-data.json"));
+  context.after(async () => stopServer(child));
+
+  const responses = await Promise.all(Array.from({ length: 61 }, () => fetch(`http://127.0.0.1:${port}/report`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({}),
+  })));
+  assert.equal(responses.filter((response) => response.status === 429).length, 1);
+});
