@@ -171,6 +171,8 @@ function routeKey(method, path) {
   if (path === "/workers/lookup") return `${method} /workers/lookup`;
   if (/^\/plants\/[^/]+\/workers\/[^/]+$/.test(path)) return `${method} /plants/{plantId}/workers/{workerId}`;
   if (/^\/plants\/[^/]+\/workers$/.test(path)) return `${method} /plants/{plantId}/workers`;
+  if (/^\/plants\/[^/]+\/alert-settings$/.test(path)) return `${method} /plants/{plantId}/alert-settings`;
+  if (/^\/plants\/[^/]+\/alerts$/.test(path)) return `${method} /plants/{plantId}/alerts`;
   const nestedPlant = path.match(/^\/plants\/[^/]+(?:\/(?:zones|reports|breaks))?$/);
   if (nestedPlant) return `${method} ${nestedPlant[0].replace(/^\/plants\/[^/]+/, "/plants/{plantId}")}`;
   if (path === "/plants") return `${method} /plants`;
@@ -224,7 +226,7 @@ const server = http.createServer((request, response) => {
     }
 
     const body = Buffer.concat(chunks).toString("utf8");
-    const nestedPlantMatch = path.match(/^\/plants\/([^/]+)(?:\/workers(?:\/([^/]+))?|\/(zones|reports|breaks))?$/);
+    const nestedPlantMatch = path.match(/^\/plants\/([^/]+)(?:\/workers(?:\/([^/]+))?|\/(zones|reports|breaks|alerts|alert-settings))?$/);
     const publicWorkerMatch = path.match(/^\/public\/workers\/([^/]+)\/([^/]+)\/([^/]+)(?:\/breaks)?$/);
     const publicWorkerByIdMatch = path.match(/^\/public\/workers\/([^/]+)\/([^/]+)$/);
     const workerMatch = path.match(/^\/workers\/([^/]+)$/);

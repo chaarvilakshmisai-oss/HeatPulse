@@ -172,6 +172,13 @@ function validateWorker(body) {
   if (body.active !== undefined && typeof body.active !== "boolean") {
     return { ok: false, error: "active must be a boolean" };
   }
+  if (body.smsConsent !== undefined && typeof body.smsConsent !== "boolean") {
+    return { ok: false, error: "smsConsent must be a boolean" };
+  }
+  const smsConsent = body.smsConsent === true;
+  if (smsConsent && (typeof body.phone !== "string" || !/^\+?[1-9]\d{7,14}$/.test(body.phone.trim()))) {
+    return { ok: false, error: "A valid international phone number is required when SMS consent is given" };
+  }
   return {
     ok: true,
     value: {
@@ -180,6 +187,8 @@ function validateWorker(body) {
       shiftStart: body.shiftStart,
       shiftEnd: body.shiftEnd,
       active: body.active !== false,
+      smsConsent,
+      ...(smsConsent ? { phone: body.phone.trim() } : {}),
     },
   };
 }

@@ -103,7 +103,29 @@ test("validates workers with a short-name source, zone and recurring overnight s
       shiftStart: "22:00",
       shiftEnd: "06:00",
       active: true,
+      smsConsent: false,
     },
+  });
+
+  test("stores worker phone numbers only when explicit SMS consent is true", () => {
+    const worker = { name: "Worker", shiftStart: "07:00", shiftEnd: "15:00", phone: "+14155552671" };
+    assert.deepEqual(validateWorker({ ...worker }), {
+      ok: true,
+      value: { name: "Worker", shiftStart: "07:00", shiftEnd: "15:00", active: true, smsConsent: false },
+    });
+    assert.deepEqual(validateWorker({ ...worker, smsConsent: true }), {
+      ok: true,
+      value: {
+        name: "Worker",
+        shiftStart: "07:00",
+        shiftEnd: "15:00",
+        active: true,
+        smsConsent: true,
+        phone: "+14155552671",
+      },
+    });
+    assert.equal(validateWorker({ ...worker, phone: "+1 (415) 555-2671", smsConsent: true }).ok, false);
+    assert.equal(validateWorker({ ...worker, phone: "", smsConsent: true }).ok, false);
   });
   for (const body of [
     { name: "", zoneId: "z", shiftStart: "07:00", shiftEnd: "15:00" },

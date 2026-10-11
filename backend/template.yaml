@@ -192,6 +192,30 @@ Resources:
             Method: GET
             Auth:
               Authorizer: CognitoJwtAuthorizer
+        PlantAlertSettings:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref HttpApi
+            Path: /plants/{plantId}/alert-settings
+            Method: GET
+            Auth:
+              Authorizer: CognitoJwtAuthorizer
+        SavePlantAlertSettings:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref HttpApi
+            Path: /plants/{plantId}/alert-settings
+            Method: PUT
+            Auth:
+              Authorizer: CognitoJwtAuthorizer
+        PlantAlerts:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref HttpApi
+            Path: /plants/{plantId}/alerts
+            Method: GET
+            Auth:
+              Authorizer: CognitoJwtAuthorizer
         WorkerLogin:
           Type: HttpApi
           Properties:

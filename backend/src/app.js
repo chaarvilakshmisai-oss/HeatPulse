@@ -13,6 +13,7 @@ const {
 
 const { estimateExposure } = require("./zones");
 const { validateBreakEvent, validateReport, validateSite, validateWorker } = require("./validate");
+const { defaultAlertSettings, validateAlertSettings } = require("./alert-settings");
 const { getWorkerPlan, localDateString, localDateTimeToUtc, shiftCandidates } = require("./breaks");
 const { toIso, twoHoursAgo, expiresAt7Days } = require("./time");
 
@@ -100,9 +101,15 @@ function publicWorker(worker) {
     activeBreakScheduledAt,
     activeBreakZoneId,
     lastEndedBreakScheduledAt,
+    phone,
+    smsConsent,
     ...result
   } = worker;
   return { ...result, zoneId: workerZoneId };
+}
+
+function managerWorker(worker) {
+  return { ...publicWorker(worker), phone: worker.phone || "", smsConsent: worker.smsConsent === true };
 }
 
 function validZone(site, zoneId) {
@@ -172,6 +179,50 @@ async function loadPlant(plantId) {
 async function loadOwnedPlant(ownerId, plantId) {
   const plant = await loadPlant(plantId);
   return plant?.ownerId === ownerId ? plant : null;
+}
+
+async function getAlertSettings(event) {
+  const plantId = event.pathParameters?.plantId;
+  const result = await doc.send(new GetCommand({
+    TableName: TABLE_NAME,
+    Key: { zoneId: sitePartition(plantId), ts: "ALERT_SETTINGS" },
+  }));
+  return json(200, result.Item?.settings || defaultAlertSettings(plantId));
+}
+
+async function saveAlertSettings(event) {
+  const plantId = event.pathParameters?.plantId;
+  const parsed = parseBody(event);
+  if (!parsed.ok) return json(400, { error: parsed.error });
+  const check = validateAlertSettings(parsed.value, plantId);
+  if (!check.ok) return json(400, { error: check.error });
+  await doc.send(new PutCommand({
+    TableName: TABLE_NAME,
+    Item: {
+      zoneId: sitePartition(plantId),
+      ts: "ALERT_SETTINGS",
+      entityType: "alertSettings",
+      plantId,
+      settings: check.value,
+      updatedAt: new Date().toISOString(),
+    },
+  }));
+  return json(200, check.value);
+}
+
+async function getPlantAlerts(event) {
+  const plantId = event.pathParameters?.plantId;
+  const result = await doc.send(new QueryCommand({
+    TableName: TABLE_NAME,
+    KeyConditionExpression: "zoneId = :zoneId AND begins_with(#ts, :alertPrefix)",
+    ExpressionAttributeNames: { "#ts": "ts" },
+    ExpressionAttributeValues: {
+      ":zoneId": `ALERT#${plantId}`,
+      ":alertPrefix": "ALERT#",
+    },
+    ScanIndexForward: false,
+  }));
+  return json(200, result.Items || []);
 }
 
 async function listOwnerPlants(ownerId) {
@@ -711,7 +762,7 @@ async function getWorkers(event) {
   const sub = managerId(event);
   if (!sub) return json(401, { error: "Unauthorized" });
   if (!await loadSite(sub)) return json(404, { error: "No site yet" });
-  return json(200, (await listSiteWorkers(sub)).map(publicWorker));
+  return json(200, (await listSiteWorkers(sub)).map(managerWorker));
 }
 
 async function createWorker(event) {
@@ -738,6 +789,7 @@ async function createWorker(event) {
       shiftStart: check.value.shiftStart,
       shiftEnd: check.value.shiftEnd,
       active: check.value.active,
+      ...(check.value.smsConsent ? { phone: check.value.phone, smsConsent: true } : { smsConsent: false }),
       workerId,
       createdAt: new Date().toISOString(),
       gsi1pk: `${sitePartition(sub)}#WORKER#${workerId}`,
@@ -750,7 +802,7 @@ async function createWorker(event) {
         ConditionExpression: "attribute_not_exists(zoneId) AND attribute_not_exists(#ts)",
         ExpressionAttributeNames: { "#ts": "ts" },
       }));
-      return json(201, publicWorker(worker));
+      return json(201, managerWorker(worker));
     } catch (error) {
       if (error.name !== "ConditionalCheckFailedException") throw error;
     }
@@ -797,9 +849,11 @@ async function updateWorker(event, deactivate = false) {
     shiftStart: check.value.shiftStart,
     shiftEnd: check.value.shiftEnd,
     active: parsed.value.active === undefined ? current.active : check.value.active,
+    ...(check.value.smsConsent ? { phone: check.value.phone, smsConsent: true } : { phone: undefined, smsConsent: false }),
   };
+  if (!updated.phone) delete updated.phone;
   await doc.send(new PutCommand({ TableName: TABLE_NAME, Item: updated }));
-  return json(200, publicWorker(updated));
+  return json(200, managerWorker(updated));
 }
 
 async function getPublicWorkerPlan(event) {
@@ -1058,6 +1112,9 @@ exports.handler = async (event) => {
     if (routeKey === "GET /plants/{plantId}/reports") return withOwnedPlant(event, getReports);
     if (routeKey === "GET /plants/{plantId}/breaks") return withOwnedPlant(event, getBreakSummary);
     if (routeKey === "GET /plants/{plantId}/workers") return withOwnedPlant(event, getWorkers);
+    if (routeKey === "GET /plants/{plantId}/alert-settings") return withOwnedPlant(event, getAlertSettings);
+    if (routeKey === "PUT /plants/{plantId}/alert-settings") return withOwnedPlant(event, saveAlertSettings);
+    if (routeKey === "GET /plants/{plantId}/alerts") return withOwnedPlant(event, getPlantAlerts);
     if (routeKey === "POST /plants/{plantId}/workers") return withOwnedPlant(event, createWorker);
     if (routeKey === "PUT /plants/{plantId}/workers/{workerId}") return withOwnedPlant(event, updateWorker);
     if (routeKey === "DELETE /plants/{plantId}/workers/{workerId}") return withOwnedPlant(event, updateWorker, true);

@@ -330,6 +330,21 @@ export async function getWorkers(plantId) {
   return request(plantId ? `/plants/${encodeURIComponent(plantId)}/workers` : '/workers', {}, true);
 }
 
+export async function getAlertSettings(plantId) {
+  return request(`/plants/${encodeURIComponent(plantId)}/alert-settings`, {}, true);
+}
+
+export async function saveAlertSettings(plantId, settings) {
+  return request(`/plants/${encodeURIComponent(plantId)}/alert-settings`, {
+    method: 'PUT',
+    body: JSON.stringify(settings),
+  }, true);
+}
+
+export async function getPlantAlerts(plantId) {
+  return request(`/plants/${encodeURIComponent(plantId)}/alerts`, {}, true);
+}
+
 export async function findWorkerPlant(workerId, plantCode) {
   const query = new URLSearchParams({ workerId: workerId.trim().toUpperCase() });
   if (plantCode?.trim()) query.set('plantCode', plantCode.trim().toUpperCase());
