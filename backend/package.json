@@ -1,0 +1,13 @@
+{
+  "name": "heatpulse-backend",
+  "version": "1.0.0",
+  "private": true,
+  "description": "HeatPulse for Industry - AWS SAM backend",
+  "scripts": {
+    "test": "node --test",
+    "dev": "node dev-server.js"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}

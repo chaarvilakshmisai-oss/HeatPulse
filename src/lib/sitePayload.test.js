@@ -9,6 +9,7 @@ describe('manager site payload', () => {
       lon: '45.6',
       radiusM: '300',
       requireLocation: true,
+      timeZone: 'Asia/Kolkata',
     }, [{
       id: 'server-zone-id',
       name: ' Furnace ',
@@ -26,6 +27,7 @@ describe('manager site payload', () => {
       lon: 45.6,
       radiusM: 300,
       requireLocation: true,
+      timeZone: 'Asia/Kolkata',
       zones: [{
         id: 'server-zone-id',
         name: 'Furnace',
@@ -45,6 +47,7 @@ describe('manager site payload', () => {
       lon: 45,
       radiusM: 300,
       requireLocation: false,
+      timeZone: 'UTC',
     }, [{
       name: 'New zone',
       kind: 'indoor',
@@ -63,6 +66,7 @@ describe('manager site payload', () => {
       lon: 45,
       radiusM: 300,
       requireLocation: false,
+      timeZone: 'UTC',
       zones: [{
         id: 'assigned-server-id',
         name: 'New zone',

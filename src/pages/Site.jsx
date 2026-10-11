@@ -4,7 +4,15 @@ import { getHealth, getSite, saveSite } from '../lib/api.js';
 import { buildSitePayload } from '../lib/sitePayload.js';
 import { validateSite } from '../lib/validation.js';
 
-const INITIAL_SITE = { name: '', lat: '', lon: '', radiusM: 300, requireLocation: false, zones: [] };
+const INITIAL_SITE = {
+  name: '',
+  lat: '',
+  lon: '',
+  radiusM: 300,
+  requireLocation: false,
+  timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone || 'Asia/Kolkata',
+  zones: [],
+};
 
 function currentPosition() {
   return new Promise((resolve, reject) => {
@@ -217,6 +225,12 @@ export default function Site() {
             Longitude
             <input type="number" min="-180" max="180" step="any" value={site.lon} onChange={(event) => update('lon', event.target.value)} />
             {errors.lon && <span className="field-error">{errors.lon}</span>}
+          </label>
+          <label className="full-width">
+            Plant time zone (IANA)
+            <input value={site.timeZone || ''} placeholder="Asia/Kolkata" onChange={(event) => update('timeZone', event.target.value)} />
+            <small>Worker shifts repeat in this plant time zone. Example: Asia/Kolkata.</small>
+            {errors.timeZone && <span className="field-error">{errors.timeZone}</span>}
           </label>
         </div>
         <div className="button-row site-location-actions">

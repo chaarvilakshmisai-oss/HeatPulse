@@ -198,6 +198,42 @@ export async function getReports(limit = 50) {
   return request(`/reports?limit=${encodeURIComponent(limit)}`, {}, true);
 }
 
+export async function getWorkers() {
+  if (isDemoMode()) return [];
+  return request('/workers', {}, true);
+}
+
+export async function saveWorker(worker) {
+  const { workerId, ...body } = worker;
+  if (isDemoMode()) throw new ApiError('Worker management requires the configured API.', 501);
+  return request(workerId
+    ? `/workers/${encodeURIComponent(workerId)}`
+    : '/workers', {
+    method: workerId ? 'PUT' : 'POST',
+    body: JSON.stringify(body),
+  }, true);
+}
+
+export async function deactivateWorker(workerId) {
+  if (isDemoMode()) throw new ApiError('Worker management requires the configured API.', 501);
+  return request(`/workers/${encodeURIComponent(workerId)}`, { method: 'DELETE' }, true);
+}
+
+export async function getWorkerPlan(siteId, zoneId, workerId) {
+  const path = `/public/workers/${encodeURIComponent(siteId)}/${encodeURIComponent(zoneId)}/${encodeURIComponent(workerId)}`;
+  return request(path);
+}
+
+export async function recordWorkerBreak(siteId, zoneId, workerId, breakEvent) {
+  const path = `/public/workers/${encodeURIComponent(siteId)}/${encodeURIComponent(zoneId)}/${encodeURIComponent(workerId)}/breaks`;
+  return request(path, { method: 'POST', body: JSON.stringify(breakEvent) });
+}
+
+export async function getBreakSummary() {
+  if (isDemoMode()) return { date: new Date().toISOString().slice(0, 10), workers: [], zones: [] };
+  return request('/breaks', {}, true);
+}
+
 export async function getHealth() {
   if (isDemoMode() && !API_BASE_URL) return { ok: false, demo: true };
   return request('/health');

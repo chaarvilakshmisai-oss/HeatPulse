@@ -344,6 +344,14 @@ button {
 .tap-header { text-align: center; }
 .tap-subtitle { color: var(--sky-ink); font: 500 11px var(--mono); }
 .tap-main { display: flex; flex-direction: column; gap: 18px; padding: 18px; }
+.worker-break-panel { display: flex; flex-direction: column; gap: 10px; padding: 14px; border: 1px solid var(--line); border-radius: 12px; background: #F5F7FB; color: var(--ink); }
+.worker-break-panel h2 { margin: 0; font-size: 18px; }
+.worker-id-form, .worker-plan { display: flex; flex-direction: column; gap: 10px; }
+.worker-id-form label { display: flex; flex-direction: column; gap: 6px; color: var(--ink); font-size: 13px; font-weight: 500; }
+.worker-id-form input { min-height: 40px; padding: 8px 10px; border: 1px solid #94A3B8; border-radius: 8px; font: inherit; text-transform: uppercase; }
+.worker-plan p { margin: 0; color: var(--ink); }
+.worker-plan small { color: var(--ink); font-size: 11px; }
+.break-countdown { font: 500 16px var(--mono); }
 .tap-question { margin: 4px 0; color: var(--ink); font-size: 28px; font-weight: 600; line-height: 1.2; text-align: center; }
 .tap-options { display: flex; flex-direction: column; gap: 12px; }
 .tap-option-btn { display: flex; flex-direction: column; justify-content: center; min-height: 72px; padding: 12px 16px; border: 2px solid transparent; border-radius: 14px; color: #0B1220; }
@@ -567,6 +575,9 @@ button {
 .reports-refresh { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 10px; }
 .table-wrapper { overflow-x: auto; padding: 0; }
 .reports-table { width: 100%; min-width: 600px; border-collapse: collapse; color: var(--ink); font-size: 13px; text-align: left; }
+.workers-table { min-width: 900px; }
+.break-report-section { display: flex; flex-direction: column; gap: 12px; }
+.break-report-section h2 { margin: 0; color: var(--ink); font-size: 20px; }
 .reports-table th, .reports-table td { padding: 13px 16px; border-bottom: 1px solid var(--line); }
 .reports-table th { font-size: 12px; font-weight: 600; }
 .reports-table tbody tr:last-child td { border-bottom: 0; }

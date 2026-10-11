@@ -18,8 +18,14 @@ import {
   getPublicSite,
   getReports,
   getSite,
+  getBreakSummary,
+  getWorkerPlan,
+  getWorkers,
   getZones,
+  deactivateWorker,
+  recordWorkerBreak,
   saveSite,
+  saveWorker,
   sendReport,
 } from './api.js';
 
@@ -99,8 +105,8 @@ describe('frontend API contract', () => {
     expectPublicRequest({ url: '/report', method: 'POST', body: report });
   });
 
-  it('gets the manager site with its ID token', async () => {
-    const site = { siteId: 'site-1', name: 'Plant', zones: [] };
+  it('returns the plain local manager site object with its ID token', async () => {
+    const site = { siteId: 'local-manager', name: 'Plant', zones: [] };
     fetch.mockResolvedValueOnce(jsonResponse(site));
     await expect(getSite()).resolves.toEqual(site);
     expectManagerRequest({ url: '/site' });
@@ -157,6 +163,61 @@ describe('frontend API contract', () => {
     fetch.mockResolvedValueOnce(jsonResponse(reports));
     await expect(getReports(17)).resolves.toEqual(reports);
     expectManagerRequest({ url: '/reports?limit=17' });
+  });
+
+  it('lists workers with a manager token', async () => {
+    const workers = [{ workerId: 'W-4K7Q', name: 'Worker One', zoneId: 'zone-1', active: true }];
+    fetch.mockResolvedValueOnce(jsonResponse(workers));
+    await expect(getWorkers()).resolves.toEqual(workers);
+    expectManagerRequest({ url: '/workers' });
+  });
+
+  it('creates and updates workers with manager requests', async () => {
+    const worker = { workerId: 'W-4K7Q', name: 'Worker One', zoneId: 'zone-1', shiftStart: '07:00', shiftEnd: '15:00', active: true };
+    fetch.mockResolvedValueOnce(jsonResponse(worker, 201));
+    const { workerId, ...newWorker } = worker;
+    await expect(saveWorker(newWorker)).resolves.toEqual(worker);
+    expectManagerRequest({
+      url: '/workers',
+      method: 'POST',
+      body: newWorker,
+    });
+
+    fetch.mockResolvedValueOnce(jsonResponse(worker));
+    await expect(saveWorker(worker)).resolves.toEqual(worker);
+    expectManagerRequest({
+      url: '/workers/W-4K7Q',
+      method: 'PUT',
+      body: { name: worker.name, zoneId: worker.zoneId, shiftStart: worker.shiftStart, shiftEnd: worker.shiftEnd, active: true },
+    });
+  });
+
+  it('deactivates workers and loads manager break summaries', async () => {
+    fetch.mockResolvedValueOnce(jsonResponse({ workerId: 'W-4K7Q', active: false }));
+    await expect(deactivateWorker('W-4K7Q')).resolves.toEqual({ workerId: 'W-4K7Q', active: false });
+    expectManagerRequest({ url: '/workers/W-4K7Q', method: 'DELETE' });
+
+    const summary = { date: '2026-10-11', workers: [], zones: [] };
+    fetch.mockResolvedValueOnce(jsonResponse(summary));
+    await expect(getBreakSummary()).resolves.toEqual(summary);
+    expectManagerRequest({ url: '/breaks' });
+  });
+
+  it('looks up a worker plan and records break events without manager credentials', async () => {
+    const plan = { shift: { start: '2026-10-11T01:30:00.000Z', end: '2026-10-11T09:30:00.000Z', timeZone: 'Asia/Kolkata' }, nextBreak: null, breakStatus: 'done' };
+    fetch.mockResolvedValueOnce(jsonResponse(plan));
+    await expect(getWorkerPlan('site 1', 'zone/a', 'W-4K7Q')).resolves.toEqual(plan);
+    expectPublicRequest({ url: '/public/workers/site%201/zone%2Fa/W-4K7Q' });
+
+    const breakEvent = { type: 'start', scheduledAt: plan.shift.start, lat: 12.3, lon: 45.6 };
+    const result = { ok: true, breakEvent: { type: 'start', timestamp: plan.shift.start, withinRadius: null } };
+    fetch.mockResolvedValueOnce(jsonResponse(result, 201));
+    await expect(recordWorkerBreak('site 1', 'zone/a', 'W-4K7Q', breakEvent)).resolves.toEqual(result);
+    expectPublicRequest({
+      url: '/public/workers/site%201/zone%2Fa/W-4K7Q/breaks',
+      method: 'POST',
+      body: breakEvent,
+    });
   });
 
   it('checks API health without a token', async () => {

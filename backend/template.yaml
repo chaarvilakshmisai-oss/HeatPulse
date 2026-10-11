@@ -1,0 +1,234 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Transform: AWS::Serverless-2016-10-31
+Description: HeatPulse for Industry - backend (HTTP API -> Lambda -> DynamoDB)
+
+Parameters:
+  UserPoolId:
+    Type: String
+    Description: Cognito user pool ID used to validate manager ID tokens
+  UserPoolClientId:
+    Type: String
+    Description: Cognito app client ID accepted by the JWT authorizer
+  AllowedOrigin:
+    Type: String
+    Default: "*"
+    Description: Frontend origin allowed by API Gateway CORS
+
+Globals:
+  Function:
+    Runtime: nodejs20.x
+    Architectures:
+      - arm64
+    MemorySize: 256
+    Timeout: 15
+
+Resources:
+  ReportsTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: heatpulse-reports
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: zoneId
+          AttributeType: S
+        - AttributeName: ts
+          AttributeType: S
+        - AttributeName: gsi1pk
+          AttributeType: S
+        - AttributeName: gsi1sk
+          AttributeType: S
+        - AttributeName: gsi2pk
+          AttributeType: S
+        - AttributeName: gsi2sk
+          AttributeType: S
+      KeySchema:
+        - AttributeName: zoneId
+          KeyType: HASH
+        - AttributeName: ts
+          KeyType: RANGE
+      GlobalSecondaryIndexes:
+        - IndexName: WorkerBreaksIndex
+          KeySchema:
+            - AttributeName: gsi1pk
+              KeyType: HASH
+            - AttributeName: gsi1sk
+              KeyType: RANGE
+          Projection:
+            ProjectionType: ALL
+        - IndexName: BreaksByPlantDayIndex
+          KeySchema:
+            - AttributeName: gsi2pk
+              KeyType: HASH
+            - AttributeName: gsi2sk
+              KeyType: RANGE
+          Projection:
+            ProjectionType: ALL
+      TimeToLiveSpecification:
+        AttributeName: expiresAt
+        Enabled: true
+
+  HttpApi:
+    Type: AWS::Serverless::HttpApi
+    Properties:
+      CorsConfiguration:
+        AllowOrigins:
+          - !Ref AllowedOrigin
+        AllowMethods:
+          - GET
+          - POST
+          - PUT
+          - DELETE
+          - OPTIONS
+        AllowHeaders:
+          - content-type
+          - authorization
+      Auth:
+        Authorizers:
+          CognitoJwtAuthorizer:
+            IdentitySource: "$request.header.Authorization"
+            JwtConfiguration:
+              issuer: !Sub "https://cognito-idp.${AWS::Region}.amazonaws.com/${UserPoolId}"
+              audience:
+                - !Ref UserPoolClientId
+      StageName: "$default"
+      DefaultRouteSettings:
+        ThrottlingBurstLimit: 100
+        ThrottlingRateLimit: 50
+
+  ApiFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: src/
+      Handler: app.handler
+      Description: HeatPulse API - routes on event.routeKey
+      Environment:
+        Variables:
+          TABLE_NAME: !Ref ReportsTable
+      Policies:
+        # Both SAM policy templates are scoped to this one table only.
+        - DynamoDBReadPolicy:
+            TableName: !Ref ReportsTable
+        - DynamoDBWritePolicy:
+            TableName: !Ref ReportsTable
+        - Statement:
+            - Effect: Allow
+              Action:
+                - dynamodb:TransactWriteItems
+              Resource: !GetAtt ReportsTable.Arn
+      Events:
+        Health:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref HttpApi
+            Path: /health
+            Method: GET
+        PublicSite:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref HttpApi
+            Path: /public/sites/{siteId}
+            Method: GET
+        Zones:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref HttpApi
+            Path: /zones
+            Method: GET
+            Auth:
+              Authorizer: CognitoJwtAuthorizer
+        Site:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref HttpApi
+            Path: /site
+            Method: GET
+            Auth:
+              Authorizer: CognitoJwtAuthorizer
+        SaveSite:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref HttpApi
+            Path: /site
+            Method: PUT
+            Auth:
+              Authorizer: CognitoJwtAuthorizer
+        Reports:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref HttpApi
+            Path: /reports
+            Method: GET
+            Auth:
+              Authorizer: CognitoJwtAuthorizer
+        Report:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref HttpApi
+            Path: /report
+            Method: POST
+        Workers:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref HttpApi
+            Path: /workers
+            Method: GET
+            Auth:
+              Authorizer: CognitoJwtAuthorizer
+        CreateWorker:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref HttpApi
+            Path: /workers
+            Method: POST
+            Auth:
+              Authorizer: CognitoJwtAuthorizer
+        UpdateWorker:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref HttpApi
+            Path: /workers/{workerId}
+            Method: PUT
+            Auth:
+              Authorizer: CognitoJwtAuthorizer
+        DeactivateWorker:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref HttpApi
+            Path: /workers/{workerId}
+            Method: DELETE
+            Auth:
+              Authorizer: CognitoJwtAuthorizer
+        BreakSummary:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref HttpApi
+            Path: /breaks
+            Method: GET
+            Auth:
+              Authorizer: CognitoJwtAuthorizer
+        PublicWorkerPlan:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref HttpApi
+            Path: /public/workers/{siteId}/{zoneId}/{workerId}
+            Method: GET
+        PublicBreakEvent:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref HttpApi
+            Path: /public/workers/{siteId}/{zoneId}/{workerId}/breaks
+            Method: POST
+
+Outputs:
+  ApiUrl:
+    Description: Base URL of the HeatPulse API
+    Value: !Sub "https://${HttpApi}.execute-api.${AWS::Region}.amazonaws.com"
+  TableName:
+    Description: DynamoDB table name
+    Value: !Ref ReportsTable
+  UserPoolId:
+    Description: Cognito user pool ID configured for the JWT authorizer
+    Value: !Ref UserPoolId
+  UserPoolClientId:
+    Description: Cognito app client ID configured for the JWT authorizer
+    Value: !Ref UserPoolClientId

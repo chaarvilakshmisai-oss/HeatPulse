@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { validateSite, validateZone } from './validation.js';
+import { validateSite, validateWorker, validateZone } from './validation.js';
 
 describe('manager form validation', () => {
   it('validates required zone values and limits', () => {
@@ -26,6 +26,36 @@ describe('manager form validation', () => {
       lon: expect.any(String),
       radiusM: expect.any(String),
     });
-    expect(validateSite({ name: 'Plant 1', lat: '37.7', lon: '-122.4', radiusM: 300 })).toEqual({});
+    expect(validateSite({
+      name: 'Plant 1',
+      lat: '37.7',
+      lon: '-122.4',
+      radiusM: 300,
+      timeZone: 'Asia/Kolkata',
+    })).toEqual({});
+  });
+
+  it('validates a worker name, zone, and recurring shift times', () => {
+    expect(validateWorker({ name: '', zoneId: '', shiftStart: '25:00', shiftEnd: '08:30' })).toMatchObject({
+      name: expect.any(String),
+      zoneId: expect.any(String),
+      shiftStart: expect.any(String),
+    });
+    expect(validateWorker({
+      name: 'Worker One',
+      zoneId: 'zone-1',
+      shiftStart: '22:00',
+      shiftEnd: '06:00',
+    })).toEqual({});
+  });
+
+  it('rejects an invalid plant IANA timezone when supplied', () => {
+    expect(validateSite({
+      name: 'Plant 1',
+      lat: '37.7',
+      lon: '-122.4',
+      radiusM: 300,
+      timeZone: 'Not/A_Real_Zone',
+    })).toHaveProperty('timeZone');
   });
 });

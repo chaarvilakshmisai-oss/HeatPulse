@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
-import { getReports, getZones } from '../lib/api.js';
+import { getBreakSummary, getReports, getZones } from '../lib/api.js';
 
 function reportRows(result) {
   if (Array.isArray(result)) return result;
@@ -33,6 +33,7 @@ function isLocationVerified(report) {
 export default function Reports() {
   const [reports, setReports] = useState([]);
   const [zoneNames, setZoneNames] = useState({});
+  const [breakSummary, setBreakSummary] = useState({ workers: [], zones: [] });
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState('');
@@ -43,10 +44,14 @@ export default function Reports() {
     setRefreshing(true);
     setError('');
     try {
-      const [result, zones] = await Promise.all([getReports(50), getZones()]);
+      const [result, zones, summary] = await Promise.all([getReports(50), getZones(), getBreakSummary()]);
       const rows = reportRows(result);
       if (!Array.isArray(zones)) throw new Error('The zones response was not valid.');
+      if (!Array.isArray(summary?.workers) || !Array.isArray(summary?.zones)) {
+        throw new Error('The break summary response was not valid.');
+      }
       setReports(rows);
+      setBreakSummary(summary);
       setZoneNames(Object.fromEntries(zones.map((zone) => [zone.id, zone.name])));
       setUpdatedAt(new Date());
     } catch (requestError) {
@@ -118,6 +123,42 @@ export default function Reports() {
           </table>
         </div>
       )}
+      <section className="break-report-section">
+        <h2>Breaks today {breakSummary.date ? `· ${breakSummary.date}` : ''}</h2>
+        {!breakSummary.workers.length ? (
+          <div className="card empty-state">No workers have been assigned yet.</div>
+        ) : (
+          <div className="card table-wrapper">
+            <table className="reports-table">
+              <caption className="visually-hidden">Breaks taken and required today by worker</caption>
+              <thead><tr><th>Worker</th><th>Worker ID</th><th>Zone</th><th>Breaks taken / required</th></tr></thead>
+              <tbody>
+                {breakSummary.workers.map((worker) => (
+                  <tr key={worker.workerId}>
+                    <td>{worker.name}</td>
+                    <td><code>{worker.workerId}</code></td>
+                    <td>{zoneNames[worker.zoneId] || worker.zoneId}</td>
+                    <td>{worker.breaksTaken} / {worker.breaksRequired}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+        {!!breakSummary.zones.length && (
+          <div className="card table-wrapper">
+            <table className="reports-table">
+              <caption className="visually-hidden">Breaks taken and required today by zone</caption>
+              <thead><tr><th>Zone</th><th>Breaks taken / required</th></tr></thead>
+              <tbody>
+                {breakSummary.zones.map((zone) => (
+                  <tr key={zone.zoneId}><td>{zone.zoneName}</td><td>{zone.breaksTaken} / {zone.breaksRequired}</td></tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </section>
     </section>
   );
 }

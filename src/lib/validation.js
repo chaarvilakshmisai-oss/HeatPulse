@@ -32,5 +32,24 @@ export function validateSite(site) {
   if (!Number.isInteger(Number(site.radiusM)) || site.radiusM < 50 || site.radiusM > 2000) {
     errors.radiusM = 'Allowed radius must be from 50 to 2000 metres.';
   }
+  if (!site.timeZone) {
+    errors.timeZone = 'Enter the plant time zone, such as Asia/Kolkata.';
+  } else {
+    try {
+      new Intl.DateTimeFormat('en-US', { timeZone: site.timeZone }).format();
+    } catch {
+      errors.timeZone = 'Enter a valid IANA time zone, such as Asia/Kolkata.';
+    }
+  }
+  return errors;
+}
+
+export function validateWorker(worker) {
+  const errors = {};
+  if (!worker.name?.trim() || worker.name.trim().length > 80) errors.name = 'Enter a worker name (up to 80 characters).';
+  if (!worker.zoneId) errors.zoneId = 'Choose a work area.';
+  if (!/^(?:[01]\d|2[0-3]):[0-5]\d$/.test(worker.shiftStart || '')) errors.shiftStart = 'Enter a valid shift start time.';
+  if (!/^(?:[01]\d|2[0-3]):[0-5]\d$/.test(worker.shiftEnd || '')) errors.shiftEnd = 'Enter a valid shift end time.';
+  if (worker.shiftStart && worker.shiftStart === worker.shiftEnd) errors.shiftEnd = 'Shift start and end must differ.';
   return errors;
 }

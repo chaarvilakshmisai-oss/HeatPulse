@@ -10,6 +10,7 @@ const NAV_ITEMS = [
   { to: '/app/site', label: 'Site & location' },
   { to: '/app/qr', label: 'QR codes' },
   { to: '/app/reports', label: 'Reports' },
+  { to: '/app/workers', label: 'Workers' },
 ];
 
 export function AppShell({ user, children }) {

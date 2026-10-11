@@ -9,6 +9,7 @@ import Zones from './pages/Zones.jsx';
 import Site from './pages/Site.jsx';
 import QrCodes from './pages/QrCodes.jsx';
 import Reports from './pages/Reports.jsx';
+import Workers from './pages/Workers.jsx';
 import { AppShell } from './components/AppShell.jsx';
 import { getAppConfigurationProblem } from './lib/config.js';
 import Sky from './components/Sky.jsx';
@@ -93,6 +94,7 @@ function ManagerRoutes() {
           <Route path="site" element={<Site />} />
           <Route path="qr" element={<QrCodes />} />
           <Route path="reports" element={<Reports />} />
+          <Route path="workers" element={<Workers />} />
         </Route>
       </Route>
       <Route path="*" element={<Navigate to="/app/dashboard" replace />} />
@@ -111,6 +113,7 @@ function SiteRequired() {
     setStatus('loading');
     getSite()
       .then((site) => {
+        console.log('[SiteRequired] getSite() result:', site);
         if (!active) return;
         if (!site && location.pathname !== '/app/site') {
           navigate('/app/site', { replace: true, state: { setupRequired: true } });
