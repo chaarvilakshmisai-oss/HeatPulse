@@ -1,7 +1,11 @@
 node_modules
 dist
 .DS_Store
+Thumbs.db
 *.log
+*.swp
+.idea/
+.vscode/
 .env
 .env.*
 !.env.example
@@ -13,3 +17,4 @@ backend/.local-data.json
 backend/.local-data.json.*.tmp
 backend/.dev-data.json
 backend/.dev-data.json.*.tmp
+report.*.json
