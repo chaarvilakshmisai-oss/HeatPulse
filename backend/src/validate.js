@@ -156,8 +156,9 @@ function validateWorker(body) {
   if (typeof body.name !== "string" || !body.name.trim() || body.name.trim().length > 80) {
     return { ok: false, error: "name must be between 1 and 80 characters" };
   }
-  if (typeof body.zoneId !== "string" || !body.zoneId.trim()) {
-    return { ok: false, error: "zoneId is required" };
+  if (body.zoneId !== undefined && body.zoneId !== null
+    && (typeof body.zoneId !== "string" || !body.zoneId.trim())) {
+    return { ok: false, error: "zoneId must be a non-empty string or omitted" };
   }
   if (typeof body.shiftStart !== "string" || !SHIFT_TIME.test(body.shiftStart)) {
     return { ok: false, error: "shiftStart must be a 24-hour HH:mm time" };
@@ -175,7 +176,7 @@ function validateWorker(body) {
     ok: true,
     value: {
       name: body.name.trim(),
-      zoneId: body.zoneId,
+      ...(body.zoneId ? { zoneId: body.zoneId } : {}),
       shiftStart: body.shiftStart,
       shiftEnd: body.shiftEnd,
       active: body.active !== false,

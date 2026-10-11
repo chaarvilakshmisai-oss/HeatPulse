@@ -229,4 +229,13 @@ describe('worker login errors', () => {
     expect(invalidCases.map(workerLookupErrorMessage))
       .toEqual([WORKER_NOT_FOUND_MESSAGE, WORKER_NOT_FOUND_MESSAGE, WORKER_NOT_FOUND_MESSAGE]);
   });
+
+  it('logs workers in with plant codes and applies a five-attempt cooldown', () => {
+    const pageSource = readFileSync(new URL('../pages/WorkerLogin.jsx', import.meta.url), 'utf8');
+    const apiSource = readFileSync(new URL('./api.js', import.meta.url), 'utf8');
+    expect(pageSource).toContain('loginWorker(plantCode, workerId)');
+    expect(pageSource).toContain('nextFailures >= 5');
+    expect(pageSource).toContain('Ask your supervisor for the plant code.');
+    expect(apiSource).toContain("request('/worker-login'");
+  });
 });

@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useParams } from 'react-router-dom';
-import { getSite, getWorkers, getZones, saveWorker, deactivateWorker } from '../lib/api.js';
+import { findWorkerPlant, getSite, getWorkers, getZones, saveWorker, deactivateWorker } from '../lib/api.js';
 import { validateWorker } from '../lib/validation.js';
 
 const EMPTY_WORKER = { name: '', zoneId: '', shiftStart: '07:00', shiftEnd: '15:00', active: true };
@@ -19,6 +19,9 @@ export default function Workers() {
   const [success, setSuccess] = useState('');
   const [loadError, setLoadError] = useState('');
   const [loadAttempt, setLoadAttempt] = useState(0);
+  const [lookupId, setLookupId] = useState('');
+  const [lookupResults, setLookupResults] = useState(null);
+  const [lookupError, setLookupError] = useState('');
 
   async function refresh() {
     const [siteResult, zoneResult, workerResult] = await Promise.all([getSite(plantId), getZones(plantId), getWorkers(plantId)]);
@@ -60,7 +63,7 @@ export default function Workers() {
     setEditingId(worker.workerId);
     setForm({
       name: worker.name,
-      zoneId: worker.zoneId,
+      zoneId: worker.zoneId || '',
       shiftStart: worker.shiftStart,
       shiftEnd: worker.shiftEnd,
       active: worker.active,
@@ -121,6 +124,27 @@ export default function Workers() {
     } catch (copyError) {
       setError(copyError.message || 'Unable to copy the worker ID. Select and copy it manually.');
     }
+
+    async function lookup(event) {
+      event.preventDefault();
+      setLookupError('');
+      setLookupResults(null);
+      try {
+        const result = await findWorkerPlant(lookupId);
+        setLookupResults(result.matches);
+      } catch (requestError) {
+        setLookupError(requestError.message || 'Unable to find this worker.');
+      }
+    }
+
+    async function copyPlantCode() {
+      try {
+        await navigator.clipboard.writeText(site.plantCode);
+        setSuccess(`Copied ${site.plantCode}.`);
+      } catch (copyError) {
+        setError(copyError.message || 'Unable to copy the plant code.');
+      }
+    }
   }
 
   if (loading) return <div className="card page-state" role="status">Loading workers…</div>;
@@ -133,6 +157,21 @@ export default function Workers() {
           <p>Assign each worker a zone and recurring shift in {site?.timeZone || 'the plant time zone'}.</p>
         </div>
       </header>
+      <div className="card worker-code-banner">
+        <p>Workers sign in with Plant code <strong>{site?.plantCode || 'unavailable'}</strong> and their Worker ID.</p>
+        <button type="button" className="secondary-button" disabled={!site?.plantCode} onClick={copyPlantCode}>Copy plant code</button>
+      </div>
+      <form className="card worker-lookup" onSubmit={lookup}>
+        <label htmlFor="worker-lookup-id">Find a worker</label>
+        <div className="button-row">
+          <input id="worker-lookup-id" value={lookupId} onChange={(event) => setLookupId(event.target.value.toUpperCase())} placeholder="W-4K7Q" />
+          <button className="secondary-button" type="submit" disabled={!lookupId.trim()}>Search</button>
+        </div>
+        {lookupError && <p className="form-error" role="alert">{lookupError}</p>}
+        {lookupResults && (lookupResults.length
+          ? lookupResults.map((match) => <p key={match.plantId}>{match.workerName} works at {match.plantName}{match.zone ? ` · ${match.zone.name}` : ''}</p>)
+          : <p>No matching worker found in your plants.</p>)}
+      </form>
       {error && <p className="form-error" role="alert">{error}</p>}
       {loadError && <button type="button" className="secondary-button" onClick={() => setLoadAttempt((attempt) => attempt + 1)}>Retry loading workers</button>}
       {success && <p className="success-message" role="status">{success}</p>}
@@ -145,9 +184,9 @@ export default function Workers() {
             {errors.name && <span className="field-error">{errors.name}</span>}
           </label>
           <label>
-            Zone
+            Zone (optional)
             <select value={form.zoneId} onChange={(event) => setForm({ ...form, zoneId: event.target.value })}>
-              <option value="">Choose a zone</option>
+              <option value="">No zone assigned</option>
               {zones.map((zone) => <option key={zone.id} value={zone.id}>{zone.name}</option>)}
             </select>
             {errors.zoneId && <span className="field-error">{errors.zoneId}</span>}
@@ -171,14 +210,12 @@ export default function Workers() {
         )}
         <div className="page-actions">
           {editingId && <button type="button" className="secondary-button" onClick={reset}>Cancel</button>}
-          <button type="submit" className="primary-button" disabled={saving || !zones.length}>
+          <button type="submit" className="primary-button" disabled={saving}>
             {saving ? 'Saving…' : editingId ? 'Save worker' : 'Add worker'}
           </button>
         </div>
       </form>
-      {!zones.length ? (
-        <div className="card empty-state">Add and save at least one zone before creating workers.</div>
-      ) : !workers.length ? (
+      {!workers.length ? (
         <div className="card empty-state">No workers have been added yet.</div>
       ) : (
         <div className="card table-wrapper">

@@ -330,6 +330,12 @@ export async function getWorkers(plantId) {
   return request(plantId ? `/plants/${encodeURIComponent(plantId)}/workers` : '/workers', {}, true);
 }
 
+export async function findWorkerPlant(workerId, plantCode) {
+  const query = new URLSearchParams({ workerId: workerId.trim().toUpperCase() });
+  if (plantCode?.trim()) query.set('plantCode', plantCode.trim().toUpperCase());
+  return request(`/workers/lookup?${query.toString()}`, {}, true);
+}
+
 export async function saveWorker(worker, plantId) {
   const { workerId, ...body } = worker;
   if (isDemoMode()) throw new ApiError('Worker management requires the configured API.', 501);
@@ -356,6 +362,16 @@ export async function getWorkerPlan(siteId, zoneId, workerId) {
 export async function getWorkerPlanById(siteId, workerId) {
   const path = `/public/workers/${encodeURIComponent(siteId)}/${encodeURIComponent(workerId)}`;
   return request(path);
+}
+
+export async function loginWorker(plantCode, workerId) {
+  return request('/worker-login', {
+    method: 'POST',
+    body: JSON.stringify({
+      plantCode: plantCode.trim().toUpperCase(),
+      workerId: workerId.trim().toUpperCase(),
+    }),
+  });
 }
 
 export async function recordWorkerBreak(siteId, zoneId, workerId, breakEvent) {

@@ -60,12 +60,12 @@ describe('manager form validation', () => {
     });
   });
 
-  it('validates a worker name, zone, and recurring shift times', () => {
+  it('validates worker details while allowing an optional zone', () => {
     expect(validateWorker({ name: '', zoneId: '', shiftStart: '25:00', shiftEnd: '08:30' })).toMatchObject({
       name: expect.any(String),
-      zoneId: expect.any(String),
       shiftStart: expect.any(String),
     });
+    expect(validateWorker({ name: 'Unassigned worker', shiftStart: '07:00', shiftEnd: '15:00' })).toEqual({});
     expect(validateWorker({
       name: 'Worker One',
       zoneId: 'zone-1',

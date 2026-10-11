@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { deletePlant, getPlants, getWorkers, getZones } from '../lib/api.js';
+import { deletePlant, findWorkerPlant, getPlants, getWorkers, getZones } from '../lib/api.js';
 import { scoreZone } from '../lib/scoring.js';
 import { usePlants } from '../lib/PlantContext.jsx';
 
@@ -92,6 +92,9 @@ export default function ManagerHome() {
   const [error, setError] = useState('');
   const [retryCount, setRetryCount] = useState(0);
   const [search, setSearch] = useState('');
+  const [workerId, setWorkerId] = useState('');
+  const [workerMatches, setWorkerMatches] = useState(null);
+  const [workerLookupError, setWorkerLookupError] = useState('');
 
   const load = useCallback(async () => {
     setStatus('loading');
@@ -131,6 +134,18 @@ export default function ManagerHome() {
     }
   }
 
+  async function lookupWorker(event) {
+    event.preventDefault();
+    setWorkerLookupError('');
+    setWorkerMatches(null);
+    try {
+      const result = await findWorkerPlant(workerId);
+      setWorkerMatches(result.matches);
+    } catch (lookupError) {
+      setWorkerLookupError(lookupError.message || 'Unable to find this worker.');
+    }
+  }
+
   return (
     <section className="manager-page">
       <header className="page-heading">
@@ -145,6 +160,17 @@ export default function ManagerHome() {
         onRetry={() => setRetryCount((count) => count + 1)}
         onDelete={removePlant}
       />
+      <form className="card worker-lookup" onSubmit={lookupWorker}>
+        <label htmlFor="home-worker-lookup">Find a worker</label>
+        <div className="button-row">
+          <input id="home-worker-lookup" value={workerId} onChange={(event) => setWorkerId(event.target.value.toUpperCase())} placeholder="W-4K7Q" />
+          <button type="submit" className="secondary-button" disabled={!workerId.trim()}>Search</button>
+        </div>
+        {workerLookupError && <p className="form-error" role="alert">{workerLookupError}</p>}
+        {workerMatches && (workerMatches.length
+          ? workerMatches.map((match) => <p key={match.plantId}>{match.workerName} works at {match.plantName}{match.zone ? ` · ${match.zone.name}` : ''}</p>)
+          : <p>No matching worker found in your plants.</p>)}
+      </form>
       {status === 'ready' && plants.length > 3 && (
         <label className="plant-search">Search plants<input type="search" value={search} onChange={(event) => setSearch(event.target.value)} /></label>
       )}

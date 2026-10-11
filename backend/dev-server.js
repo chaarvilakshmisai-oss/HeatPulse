@@ -153,7 +153,7 @@ Module._load = function (request, ...rest) {
 
 process.env.TABLE_NAME = "heatpulse-reports";
 process.env.ALLOW_ORIGIN = "*";
-const { handler, migrateLegacySite } = require("./src/app");
+const { handler, migrateLegacySite, ensureLocalSamplePlant, seedDemoWorkers } = require("./src/app");
 
 const CORS = {
   "access-control-allow-origin": "*",
@@ -168,6 +168,7 @@ function publicSiteId(path) {
 
 function routeKey(method, path) {
   if (path.startsWith("/public/sites/")) return `${method} /public/sites/{siteId}`;
+  if (path === "/workers/lookup") return `${method} /workers/lookup`;
   if (/^\/plants\/[^/]+\/workers\/[^/]+$/.test(path)) return `${method} /plants/{plantId}/workers/{workerId}`;
   if (/^\/plants\/[^/]+\/workers$/.test(path)) return `${method} /plants/{plantId}/workers`;
   const nestedPlant = path.match(/^\/plants\/[^/]+(?:\/(?:zones|reports|breaks))?$/);
@@ -205,13 +206,15 @@ const server = http.createServer((request, response) => {
     const key = routeKey(request.method, path);
     const ip = request.socket.remoteAddress || "unknown";
     const isPublicReport = key === "POST /report";
-    if (isPublicReport || key.startsWith("GET /public/workers/") || key.startsWith("POST /public/workers/")) {
-      const rateLimitKey = `${ip}:${isPublicReport ? "reports" : "workers"}`;
+    const isWorkerLogin = key === "POST /worker-login";
+    if (isPublicReport || isWorkerLogin || key.startsWith("GET /public/workers/") || key.startsWith("POST /public/workers/")) {
+      const rateLimitKey = `${ip}:${isPublicReport ? "reports" : isWorkerLogin ? "worker-login" : "workers"}`;
+      const limit = isWorkerLogin ? 10 : PUBLIC_REQUEST_LIMIT;
       const now = Date.now();
       const current = publicRequestWindows.get(rateLimitKey);
       if (!current || now - current.startedAt >= PUBLIC_WINDOW_MS) {
         publicRequestWindows.set(rateLimitKey, { startedAt: now, count: 1 });
-      } else if (current.count >= PUBLIC_REQUEST_LIMIT) {
+      } else if (current.count >= limit) {
         response.writeHead(429, { ...CORS, "content-type": "application/json" });
         response.end(JSON.stringify({ error: "Too many requests. Please wait and try again." }));
         return;
@@ -261,10 +264,17 @@ const server = http.createServer((request, response) => {
 });
 
 const port = Number(process.env.PORT) || 3000;
+let startupWorkers = [];
 migrateLegacySite("local-manager")
+  .then(() => ensureLocalSamplePlant("local-manager"))
+  .then(() => seedDemoWorkers("local-manager"))
+  .then((workers) => { startupWorkers = workers; })
   .then(() => {
     server.listen(port, () => {
       console.log(`HeatPulse local API on http://localhost:${server.address().port} (persistent local data; manager subject: local-manager)`);
+      for (const worker of startupWorkers) {
+        console.log(`Demo worker: plant code ${worker.plantCode}, Worker ID ${worker.workerId}`);
+      }
     });
   })
   .catch((error) => {

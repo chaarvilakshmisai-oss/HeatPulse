@@ -1,6 +1,6 @@
 "use strict";
 
-const { randomInt, randomUUID } = require("node:crypto");
+const { randomBytes, randomInt, randomUUID } = require("node:crypto");
 const { DynamoDBClient } = require("@aws-sdk/client-dynamodb");
 const {
   DynamoDBDocumentClient,
@@ -27,6 +27,10 @@ const HEADERS = {
 const REPORT_PARTITION_PREFIX = "REPORT#";
 const BREAK_PARTITION_PREFIX = "BREAK#";
 const WORKER_ID_ALPHABET = "23456789ABCDEFGHJKLMNPQRSTUVWXYZ";
+const WORKER_LOGIN_LIMIT = 10;
+const WORKER_LOGIN_WINDOW_MS = 60_000;
+const workerLoginWindows = new Map();
+const workerSessions = new Map();
 
 function json(statusCode, payload) {
   return { statusCode, headers: HEADERS, body: JSON.stringify(payload) };
@@ -246,13 +250,16 @@ async function putPlantRecord(plant) {
 async function migrateLegacySite(ownerId) {
   const legacy = await loadSite(ownerId);
   if (!legacy || legacy.plantId) return null;
-  const references = await doc.send(new QueryCommand({
-    TableName: TABLE_NAME,
-    KeyConditionExpression: "zoneId = :owner AND begins_with(#ts, :plantPrefix)",
-    ExpressionAttributeNames: { "#ts": "ts" },
-    ExpressionAttributeValues: { ":owner": ownerPartition(ownerId), ":plantPrefix": "PLANT#" },
-  }));
-  if (references.Items?.length) return null;
+  const existingPlants = await listOwnerPlants(ownerId);
+  const migratedAlready = existingPlants.some((plant) => (
+    plant.migratedFromSiteId === ownerId
+    || (plant.name === legacy.name
+      && plant.lat === legacy.lat
+      && plant.lon === legacy.lon
+      && plant.radiusM === legacy.radiusM
+      && plant.zones.map((zone) => zone.id).join(",") === (legacy.zones || []).map((zone) => zone.id).join(","))
+  ));
+  if (migratedAlready) return null;
 
   const plantId = randomUUID();
   const plantCode = await generatePlantCode(plantId);
@@ -273,6 +280,7 @@ async function migrateLegacySite(ownerId) {
     previous: legacy,
     createdAt: legacy.createdAt || new Date().toISOString(),
   });
+  plant.migratedFromSiteId = ownerId;
   await putPlantRecord(plant);
   return publicManagerSite(plant);
 }
@@ -369,6 +377,180 @@ async function withOwnedPlant(event, handler, deactivate = false) {
     },
   };
   return handler(scopedEvent, deactivate);
+}
+
+async function loadPlantByCode(plantCode) {
+  const result = await doc.send(new GetCommand({
+    TableName: TABLE_NAME,
+    Key: plantCodeKey(plantCode),
+  }));
+  if (!result.Item?.plantId) return null;
+  const plant = await loadPlant(result.Item.plantId);
+  return plant?.plantCode === plantCode ? plant : null;
+}
+
+function workerLoginRateLimit(event) {
+  const ip = event.requestContext?.http?.sourceIp || "unknown";
+  const now = Date.now();
+  const current = workerLoginWindows.get(ip);
+  if (!current || now - current.startedAt >= WORKER_LOGIN_WINDOW_MS) {
+    workerLoginWindows.set(ip, { startedAt: now, count: 1 });
+    return false;
+  }
+  if (current.count >= WORKER_LOGIN_LIMIT) return true;
+  current.count += 1;
+  return false;
+}
+
+function workerLoginNotFound() {
+  return json(404, { error: "We couldn't find that worker ID" });
+}
+
+async function workerLogin(event) {
+  if (workerLoginRateLimit(event)) {
+    return json(429, { error: "Too many attempts. Please wait and try again." });
+  }
+  const parsed = parseBody(event);
+  if (!parsed.ok) return workerLoginNotFound();
+  const plantCode = typeof parsed.value.plantCode === "string"
+    ? parsed.value.plantCode.trim().toUpperCase()
+    : "";
+  const workerId = typeof parsed.value.workerId === "string"
+    ? parsed.value.workerId.trim().toUpperCase()
+    : "";
+  if (!plantCode || !workerId) return workerLoginNotFound();
+
+  const plant = await loadPlantByCode(plantCode);
+  const worker = plant && await loadWorker(plant.plantId, workerId);
+  if (!plant || !worker?.active) return workerLoginNotFound();
+  const zone = validZone(plant, worker.workerZoneId);
+  const workerZone = zone || { exposure: 0.5, recentTooHotTaps: 0 };
+  const events = zone ? await workerBreakEvents(plant.plantId, workerId) : [];
+  const plan = getWorkerPlan({ ...worker, zone: workerZone }, plant.timeZone || "Asia/Kolkata", events);
+  const sessionToken = randomBytes(32).toString("hex");
+  const expiresAt = new Date(Date.now() + 5 * 60_000).toISOString();
+  for (const [token, session] of workerSessions) {
+    if (Date.parse(session.expiresAt) <= Date.now()) workerSessions.delete(token);
+  }
+  workerSessions.set(sessionToken, { plantId: plant.plantId, workerId, expiresAt });
+  return json(200, {
+    name: worker.name,
+    plantName: plant.name,
+    zone: zone ? { id: zone.id, name: zone.name } : null,
+    shift: plan.shift,
+    nextBreak: plan.nextBreak,
+    breakStatus: plan.breakStatus,
+    sessionToken,
+    expiresAt,
+  });
+}
+
+async function findWorkerPlant(ownerId, workerId, plantCode) {
+  const normalizedWorkerId = workerId.trim().toUpperCase();
+  const normalizedPlantCode = plantCode?.trim().toUpperCase();
+  const plants = await listOwnerPlants(ownerId);
+  const matches = [];
+  for (const plant of plants) {
+    if (normalizedPlantCode && plant.plantCode !== normalizedPlantCode) continue;
+    const worker = (await listSiteWorkers(plant.plantId))
+      .find((item) => item.workerId === normalizedWorkerId);
+    if (!worker) continue;
+    const zone = validZone(plant, worker.workerZoneId);
+    matches.push({
+      plantId: plant.plantId,
+      plantCode: plant.plantCode,
+      plantName: plant.name,
+      workerId: worker.workerId,
+      workerName: worker.name,
+      zone: zone ? { id: zone.id, name: zone.name } : null,
+    });
+  }
+  return matches;
+}
+
+async function seedDemoWorkers(ownerId) {
+  const plants = await listOwnerPlants(ownerId);
+  const seeded = [];
+  for (const plant of plants) {
+    const existingWorkers = await listSiteWorkers(plant.plantId);
+    const demoWorker = existingWorkers.find((worker) => worker.demoSeed);
+    if (demoWorker) {
+      seeded.push({ plantCode: plant.plantCode, workerId: demoWorker.workerId });
+      continue;
+    }
+    if (existingWorkers.length) continue;
+    for (let attempt = 0; attempt < 10; attempt += 1) {
+      const workerId = generateWorkerId();
+      const worker = {
+        ...workerItemKey(plant.plantId, workerId),
+        entityType: "worker",
+        plantId: plant.plantId,
+        demoSeed: true,
+        name: "Demo Worker",
+        workerZoneId: plant.zones[0]?.id || null,
+        shiftStart: "07:00",
+        shiftEnd: "15:00",
+        active: true,
+        workerId,
+        createdAt: new Date().toISOString(),
+        gsi1pk: `${sitePartition(plant.plantId)}#WORKER#${workerId}`,
+        gsi1sk: "PROFILE",
+      };
+      try {
+        await doc.send(new PutCommand({
+          TableName: TABLE_NAME,
+          Item: worker,
+          ConditionExpression: "attribute_not_exists(zoneId) AND attribute_not_exists(#ts)",
+          ExpressionAttributeNames: { "#ts": "ts" },
+        }));
+        seeded.push({ plantCode: plant.plantCode, workerId });
+        break;
+      } catch (error) {
+        if (error.name !== "ConditionalCheckFailedException") throw error;
+      }
+    }
+  }
+  return seeded;
+}
+
+async function ensureLocalSamplePlant(ownerId) {
+  if ((await listOwnerPlants(ownerId)).length || await loadSite(ownerId)) return null;
+  const plantId = randomUUID();
+  const plantCode = await generatePlantCode(plantId);
+  const plant = makePlant({
+    plantId,
+    ownerId,
+    plantCode,
+    input: {
+      name: "HeatPulse Demo Plant",
+      lat: 37.7749,
+      lon: -122.4194,
+      radiusM: 300,
+      requireLocation: false,
+      timeZone: "UTC",
+      zones: [{
+        id: randomUUID(),
+        name: "Packing",
+        kind: "indoor",
+        roof: "metal",
+        ventilation: "average",
+        headcount: 12,
+      }],
+    },
+  });
+  await putPlantRecord(plant);
+  return publicManagerSite(plant);
+}
+
+async function lookupWorker(event) {
+  const ownerId = managerId(event);
+  if (!ownerId) return json(401, { error: "Unauthorized" });
+  const workerId = event.queryStringParameters?.workerId;
+  if (typeof workerId !== "string" || !workerId.trim()) {
+    return json(400, { error: "workerId is required" });
+  }
+  const matches = await findWorkerPlant(ownerId, workerId, event.queryStringParameters?.plantCode);
+  return json(200, { matches });
 }
 
 async function loadReports(siteId, zone, limit, reverse = true) {
@@ -556,19 +738,23 @@ async function createWorker(event) {
   if (!parsed.ok) return json(400, { error: parsed.error });
   const check = validateWorker(parsed.value);
   if (!check.ok) return json(400, { error: check.error });
-  if (!validZone(site, check.value.zoneId)) return json(400, { error: "zoneId must be a saved zone" });
+  if (check.value.zoneId && !validZone(site, check.value.zoneId)) {
+    return json(400, { error: "zoneId must be a saved zone" });
+  }
 
   for (let attempt = 0; attempt < 10; attempt += 1) {
     const workerId = generateWorkerId();
     const worker = {
       ...workerItemKey(sub, workerId),
       entityType: "worker",
+      plantId: site.plantId || sub,
       name: check.value.name,
-      workerZoneId: check.value.zoneId,
+      workerZoneId: check.value.zoneId || null,
       shiftStart: check.value.shiftStart,
       shiftEnd: check.value.shiftEnd,
       active: check.value.active,
       workerId,
+      createdAt: new Date().toISOString(),
       gsi1pk: `${sitePartition(sub)}#WORKER#${workerId}`,
       gsi1sk: "PROFILE",
     };
@@ -616,11 +802,13 @@ async function updateWorker(event, deactivate = false) {
   if (!parsed.ok) return json(400, { error: parsed.error });
   const check = validateWorker(parsed.value);
   if (!check.ok) return json(400, { error: check.error });
-  if (!validZone(site, check.value.zoneId)) return json(400, { error: "zoneId must be a saved zone" });
+  if (check.value.zoneId && !validZone(site, check.value.zoneId)) {
+    return json(400, { error: "zoneId must be a saved zone" });
+  }
   const updated = {
     ...current,
     name: check.value.name,
-    workerZoneId: check.value.zoneId,
+    workerZoneId: check.value.zoneId || null,
     shiftStart: check.value.shiftStart,
     shiftEnd: check.value.shiftEnd,
     active: parsed.value.active === undefined ? current.active : check.value.active,
@@ -892,6 +1080,8 @@ exports.handler = async (event) => {
       return getPublicSite(event.pathParameters?.siteId);
     }
     if (routeKey === "POST /report") return postReport(event);
+    if (routeKey === "POST /worker-login") return workerLogin(event);
+    if (routeKey === "GET /workers/lookup") return lookupWorker(event);
     if (routeKey === "GET /workers") return getWorkers(event);
     if (routeKey === "POST /workers") return createWorker(event);
     if (routeKey === "PUT /workers/{workerId}") return updateWorker(event);
@@ -912,3 +1102,6 @@ exports.handler = async (event) => {
 };
 
 exports.migrateLegacySite = migrateLegacySite;
+exports.findWorkerPlant = findWorkerPlant;
+exports.seedDemoWorkers = seedDemoWorkers;
+exports.ensureLocalSamplePlant = ensureLocalSamplePlant;

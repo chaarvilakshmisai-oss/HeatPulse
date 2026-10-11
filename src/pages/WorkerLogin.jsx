@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { getWorkerPlanById } from '../lib/api.js';
+import { loginWorker } from '../lib/api.js';
 import Sky from '../components/Sky.jsx';
 
 export const WORKER_NOT_FOUND_MESSAGE = "We couldn't find that worker ID";
@@ -43,13 +43,13 @@ export default function WorkerLogin() {
     setError('');
     setWorkerPlan(null);
     try {
-      const plan = await getWorkerPlanById(plantCode.trim(), workerId.trim().toUpperCase());
+      const plan = await loginWorker(plantCode, workerId);
       setWorkerPlan(plan);
       setFailures(0);
     } catch (lookupError) {
       setError(workerLookupErrorMessage(lookupError));
       const nextFailures = failures + 1;
-      if (nextFailures >= 3) {
+      if (nextFailures >= 5) {
         setFailures(0);
         setCooldown(20);
       } else {
@@ -77,7 +77,7 @@ export default function WorkerLogin() {
                 id="plant-code"
                 autoComplete="off"
                 value={plantCode}
-                onChange={(event) => setPlantCode(event.target.value)}
+                onChange={(event) => setPlantCode(event.target.value.toUpperCase())}
                 required
               />
               <small className="worker-login-help">Ask your supervisor for the plant code.</small>
@@ -99,7 +99,8 @@ export default function WorkerLogin() {
             </form>
           ) : (
             <div className="worker-plan" aria-live="polite">
-              <h2>Your shift and breaks</h2>
+              <h2>{workerPlan.plantName}</h2>
+              <p>Welcome, {workerPlan.name}{workerPlan.zone?.name ? ` · ${workerPlan.zone.name}` : ''}</p>
               {workerPlan.shift ? (
                 <p><strong>Shift:</strong> {formatTime(workerPlan.shift.start, workerPlan.shift.timeZone)}–{formatTime(workerPlan.shift.end, workerPlan.shift.timeZone)}</p>
               ) : <p>No upcoming shift is scheduled.</p>}

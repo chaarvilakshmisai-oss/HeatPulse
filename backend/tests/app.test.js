@@ -98,7 +98,7 @@ Module._load = function (request, ...args) {
   return originalLoad.call(this, request, ...args);
 };
 process.env.TABLE_NAME = "heatpulse-test";
-const { handler, migrateLegacySite } = require("../src/app");
+const { handler, migrateLegacySite, findWorkerPlant } = require("../src/app");
 Module._load = originalLoad;
 
 const managerSub = "manager-test-sub";
@@ -127,6 +127,7 @@ function event(routeKey, { body, siteId, plantId, zoneId, workerId, query, sub =
     queryStringParameters: query || {},
     requestContext: {
       authorizer: sub ? { jwt: { claims: { sub } } } : undefined,
+      http: { sourceIp: "127.0.0.1" },
     },
   };
 }
@@ -447,3 +448,101 @@ async function createTestWorker(overrides = {}) {
     assert.equal(summary.status, 200);
     assert.equal(summary.body.workers.find((worker) => worker.workerId === workerId).breaksTaken, 1);
   });
+
+test("plant-code worker login returns a plan and uniform generic failures", async () => {
+  const plant = await invoke("POST /plants", { body: { ...siteInput, name: "Login plant" } });
+  const worker = await invoke("POST /plants/{plantId}/workers", {
+    plantId: plant.body.plantId,
+    body: { name: "Unassigned worker", ...workerShiftAroundNow() },
+  });
+  assert.equal(worker.status, 201);
+  assert.equal(worker.body.zoneId, null);
+  assert.equal(worker.body.plantId, plant.body.plantId);
+  assert.equal(typeof worker.body.createdAt, "string");
+
+  const valid = await invoke("POST /worker-login", {
+    body: { plantCode: plant.body.plantCode.toLowerCase(), workerId: worker.body.workerId.toLowerCase() },
+  });
+  assert.equal(valid.status, 200);
+  assert.equal(valid.body.name, "Unassigned worker");
+  assert.equal(valid.body.plantName, "Login plant");
+  assert.equal(typeof valid.body.sessionToken, "string");
+
+  const unknownPlant = await invoke("POST /worker-login", {
+    body: { plantCode: "HP-NONE", workerId: worker.body.workerId },
+  });
+  const unknownWorker = await invoke("POST /worker-login", {
+    body: { plantCode: plant.body.plantCode, workerId: "W-UNKNOWN" },
+  });
+  await invoke("DELETE /plants/{plantId}/workers/{workerId}", {
+    plantId: plant.body.plantId,
+    workerId: worker.body.workerId,
+  });
+  const inactiveWorker = await invoke("POST /worker-login", {
+    body: { plantCode: plant.body.plantCode, workerId: worker.body.workerId },
+  });
+  assert.deepEqual(
+    [unknownPlant, unknownWorker, inactiveWorker].map(({ status, body }) => ({ status, body })),
+    [404, 404, 404].map(() => ({
+      status: 404,
+      body: { error: "We couldn't find that worker ID" },
+    })),
+  );
+});
+
+test("worker IDs are unique within a plant and may be reused in another plant", async () => {
+  const firstPlant = await invoke("POST /plants", { body: { ...siteInput, name: "First plant" } });
+  const secondPlant = await invoke("POST /plants", { body: { ...siteInput, name: "Second plant" } });
+  const workers = await Promise.all(Array.from({ length: 8 }, (_, index) => (
+    invoke("POST /plants/{plantId}/workers", {
+      plantId: firstPlant.body.plantId,
+      body: { name: `Worker ${index}`, ...workerShiftAroundNow() },
+    })
+  )));
+  const workerIds = workers.map((result) => result.body.workerId);
+  assert.equal(new Set(workerIds).size, workerIds.length);
+
+  const workerId = workerIds[0];
+  const existing = rows.get(`SITE#${firstPlant.body.plantId}|WORKER#${workerId}`);
+  rows.set(`SITE#${secondPlant.body.plantId}|WORKER#${workerId}`, {
+    ...existing,
+    zoneId: `SITE#${secondPlant.body.plantId}`,
+    plantId: secondPlant.body.plantId,
+    gsi1pk: `SITE#${secondPlant.body.plantId}#WORKER#${workerId}`,
+  });
+  const firstLogin = await invoke("POST /worker-login", {
+    body: { plantCode: firstPlant.body.plantCode, workerId },
+  });
+  const secondLogin = await invoke("POST /worker-login", {
+    body: { plantCode: secondPlant.body.plantCode, workerId },
+  });
+  assert.deepEqual([firstLogin.status, secondLogin.status], [200, 200]);
+  assert.deepEqual([firstLogin.body.plantName, secondLogin.body.plantName], ["First plant", "Second plant"]);
+});
+
+test("worker plant lookup only returns plants owned by the manager", async () => {
+  const ownedPlant = await invoke("POST /plants", { body: { ...siteInput, name: "Owned plant" } });
+  const privatePlant = await invoke("POST /plants", {
+    sub: "private-owner",
+    body: { ...siteInput, name: "Private plant" },
+  });
+  const ownedWorker = await invoke("POST /plants/{plantId}/workers", {
+    plantId: ownedPlant.body.plantId,
+    body: { name: "Owned worker", ...workerShiftAroundNow() },
+  });
+  const privateWorker = await invoke("POST /plants/{plantId}/workers", {
+    sub: "private-owner",
+    plantId: privatePlant.body.plantId,
+    body: { name: "Private worker", ...workerShiftAroundNow() },
+  });
+  assert.deepEqual(await findWorkerPlant(managerSub, privateWorker.body.workerId), []);
+
+  const ownLookup = await invoke("GET /workers/lookup", {
+    query: { workerId: ownedWorker.body.workerId },
+  });
+  assert.deepEqual(ownLookup.body.matches.map((match) => match.plantName), ["Owned plant"]);
+  const privateLookup = await invoke("GET /workers/lookup", {
+    query: { workerId: privateWorker.body.workerId },
+  });
+  assert.deepEqual(privateLookup.body.matches, []);
+});

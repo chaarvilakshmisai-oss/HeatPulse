@@ -94,6 +94,10 @@ Resources:
       DefaultRouteSettings:
         ThrottlingBurstLimit: 100
         ThrottlingRateLimit: 50
+      RouteSettings:
+        "POST /worker-login":
+          ThrottlingBurstLimit: 10
+          ThrottlingRateLimit: 5
 
   ApiFunction:
     Type: AWS::Serverless::Function
@@ -185,6 +189,20 @@ Resources:
           Properties:
             ApiId: !Ref HttpApi
             Path: /plants/{plantId}/workers
+            Method: GET
+            Auth:
+              Authorizer: CognitoJwtAuthorizer
+        WorkerLogin:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref HttpApi
+            Path: /worker-login
+            Method: POST
+        WorkerLookup:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref HttpApi
+            Path: /workers/lookup
             Method: GET
             Auth:
               Authorizer: CognitoJwtAuthorizer

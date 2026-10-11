@@ -54,7 +54,6 @@ export function validateSite(site) {
 export function validateWorker(worker) {
   const errors = {};
   if (!worker.name?.trim() || worker.name.trim().length > 80) errors.name = 'Enter a worker name (up to 80 characters).';
-  if (!worker.zoneId) errors.zoneId = 'Choose a work area.';
   if (!/^(?:[01]\d|2[0-3]):[0-5]\d$/.test(worker.shiftStart || '')) errors.shiftStart = 'Enter a valid shift start time.';
   if (!/^(?:[01]\d|2[0-3]):[0-5]\d$/.test(worker.shiftEnd || '')) errors.shiftEnd = 'Enter a valid shift end time.';
   if (worker.shiftStart && worker.shiftStart === worker.shiftEnd) errors.shiftEnd = 'Shift start and end must differ.';

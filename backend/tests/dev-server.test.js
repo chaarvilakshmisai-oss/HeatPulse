@@ -108,9 +108,9 @@ test("local API keeps the manager site across a backend restart", async (context
   const migratedPlants = await fetch(`${baseUrl}/plants`);
   assert.equal(migratedPlants.status, 200);
   const plants = await migratedPlants.json();
-  assert.equal(plants.length, 1);
-  assert.equal(plants[0].name, "INDUSTRY1");
-  assert.equal(plants[0].zones[0].name, "Furnace");
+  const migratedPlant = plants.find((plant) => plant.name === "INDUSTRY1");
+  assert.ok(migratedPlant);
+  assert.equal(migratedPlant.zones[0].name, "Furnace");
 });
 
 test("local API rate limits public worker reports by source IP", async (context) => {
@@ -126,6 +126,67 @@ test("local API rate limits public worker reports by source IP", async (context)
     body: JSON.stringify({}),
   })));
   assert.equal(responses.filter((response) => response.status === 429).length, 1);
+});
+
+test("local API rate limits worker login attempts per IP", async (context) => {
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), "heatpulse-worker-rate-limit-"));
+  context.after(() => fs.rmSync(directory, { recursive: true, force: true }));
+  const port = await getAvailablePort();
+  const child = await startServer(port, path.join(directory, "local-data.json"));
+  context.after(async () => stopServer(child));
+
+  const responses = await Promise.all(Array.from({ length: 11 }, () => fetch(`http://127.0.0.1:${port}/worker-login`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ plantCode: "HP-NONE", workerId: "W-NONE" }),
+  })));
+  assert.equal(responses.filter((response) => response.status === 404).length, 10);
+  assert.equal(responses.filter((response) => response.status === 429).length, 1);
+});
+
+test("local API migrates a legacy site and seeds a usable demo worker", async (context) => {
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), "heatpulse-worker-seed-"));
+  context.after(() => fs.rmSync(directory, { recursive: true, force: true }));
+  const dataFile = path.join(directory, "local-data.json");
+  fs.writeFileSync(dataFile, JSON.stringify([{
+    zoneId: "SITE#local-manager",
+    ts: "SITE",
+    entityType: "site",
+    siteId: "local-manager",
+    name: "Existing sample plant",
+    lat: 12.3,
+    lon: 45.6,
+    radiusM: 300,
+    requireLocation: false,
+    timeZone: "UTC",
+    zones: [{
+      id: "sample-zone",
+      name: "Packing",
+      kind: "indoor",
+      roof: "metal",
+      ventilation: "average",
+      headcount: 10,
+    }],
+  }]));
+  const port = await getAvailablePort();
+  const baseUrl = `http://127.0.0.1:${port}`;
+  const child = await startServer(port, dataFile);
+  context.after(async () => stopServer(child));
+
+  const plants = await (await fetch(`${baseUrl}/plants`)).json();
+  assert.equal(plants.length, 1);
+  const workersResponse = await fetch(`${baseUrl}/plants/${plants[0].plantId}/workers`);
+  assert.equal(workersResponse.status, 200);
+  const workers = await workersResponse.json();
+  assert.equal(workers.length, 1);
+  assert.match(workers[0].workerId, /^W-[A-Z0-9]{4}$/);
+  const login = await fetch(`${baseUrl}/worker-login`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ plantCode: plants[0].plantCode, workerId: workers[0].workerId }),
+  });
+  assert.equal(login.status, 200);
+  assert.equal((await login.json()).plantName, "Existing sample plant");
 });
 
 test("local API persists multiple plants and plant-scoped workers across restart", async (context) => {
