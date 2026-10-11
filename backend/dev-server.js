@@ -6,12 +6,20 @@
  */
 
 const http = require("node:http");
+const fs = require("node:fs");
 const Module = require("node:module");
 const path = require("node:path");
 const { loadItems, saveItems } = require("./dev-store");
 
-const DATA_FILE = process.env.HEATPULSE_DEV_DATA_FILE || path.join(__dirname, ".local-data.json");
-const items = loadItems(DATA_FILE);
+const DATA_FILE = process.env.HEATPULSE_DEV_DATA_FILE || path.join(__dirname, ".dev-data.json");
+const LEGACY_DATA_FILE = path.join(__dirname, ".local-data.json");
+const items = loadItems(
+  !process.env.HEATPULSE_DEV_DATA_FILE
+    && !fs.existsSync(DATA_FILE)
+    && fs.existsSync(LEGACY_DATA_FILE)
+    ? LEGACY_DATA_FILE
+    : DATA_FILE,
+);
 
 function persistItems() {
   saveItems(DATA_FILE, items);

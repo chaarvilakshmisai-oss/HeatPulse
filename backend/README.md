@@ -11,7 +11,7 @@ npm test
 npm run dev
 ```
 
-The dev server listens on `http://localhost:3000`, uses the synthetic manager subject `local-manager`, and persists its local DynamoDB substitute to the git-ignored `backend/.local-data.json`. Data survives server restarts; remove that file to reset local data. It is for local development only and does not validate Cognito tokens.
+The dev server listens on `http://localhost:3000`, uses the synthetic manager subject `local-manager`, and persists its local DynamoDB substitute to the git-ignored `backend/.dev-data.json`. Data survives server restarts; remove that file to reset local data. Existing `backend/.local-data.json` data is loaded once for compatibility when the new file is absent. This local mode is for development only and does not validate Cognito tokens.
 
 ## API contract
 

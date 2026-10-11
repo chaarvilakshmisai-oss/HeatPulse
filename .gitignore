@@ -11,3 +11,5 @@ dist/
 *.zip
 backend/.local-data.json
 backend/.local-data.json.*.tmp
+backend/.dev-data.json
+backend/.dev-data.json.*.tmp
