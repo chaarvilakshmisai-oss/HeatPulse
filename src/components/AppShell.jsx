@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { NavLink, useLocation, useNavigate } from 'react-router-dom';
-import { getSite } from '../lib/api.js';
+import { getSite, invalidateSiteCache } from '../lib/api.js';
 import { signOut } from '../lib/auth.js';
 import Sky from './Sky.jsx';
 
@@ -33,6 +33,7 @@ export function AppShell({ user, children }) {
 
   function handleSignOut() {
     signOut();
+    invalidateSiteCache();
     navigate('/', { replace: true });
   }
 

@@ -34,7 +34,7 @@ The backend implements public `GET /health`, `GET /public/sites/{siteId}`, `POST
 
 Shift times repeat daily in the plant's configured IANA time zone. Break intervals and durations are explicitly tunable placeholders in `src/lib/breaks.js`; they are not medical or legal guidance. The SAM stack adds two DynamoDB indexes for worker break lookup and daily reports, and API Gateway throttling for the HTTP API.
 
-For a local end-to-end check without AWS, run `npm --prefix backend run dev`. This starts the same handler on `http://localhost:3000` with in-memory data and a synthetic local manager. This local mode is not real authentication; use it only for development. Live API connectivity, Cognito sign-in, API Gateway CORS, and DynamoDB behavior still need verification against a deployed stack.
+For a local end-to-end check without AWS, run `npm --prefix backend run dev`. This starts the same handler on `http://localhost:3000` with data persisted to the git-ignored `backend/.local-data.json` and a synthetic local manager. Delete that file to reset local data. This local mode is not real authentication; use it only for development. Live API connectivity, Cognito sign-in, API Gateway CORS, and DynamoDB behavior still need verification against a deployed stack.
 
 ## Troubleshooting
 

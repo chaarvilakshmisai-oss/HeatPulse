@@ -4,14 +4,14 @@ AWS SAM backend: API Gateway HTTP API → Lambda (Node.js 20) → DynamoDB. It i
 
 ## Local development
 
-No AWS account or Docker is needed for local tests and the in-memory API:
+No AWS account or Docker is needed for local tests and the local API:
 
 ```bash
 npm test
 npm run dev
 ```
 
-The dev server listens on `http://localhost:3000`, resets its in-memory data when stopped, and uses the synthetic manager subject `local-manager`. It is for local development only and does not validate Cognito tokens.
+The dev server listens on `http://localhost:3000`, uses the synthetic manager subject `local-manager`, and persists its local DynamoDB substitute to the git-ignored `backend/.local-data.json`. Data survives server restarts; remove that file to reset local data. It is for local development only and does not validate Cognito tokens.
 
 ## API contract
 

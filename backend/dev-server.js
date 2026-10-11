@@ -7,8 +7,15 @@
 
 const http = require("node:http");
 const Module = require("node:module");
+const path = require("node:path");
+const { loadItems, saveItems } = require("./dev-store");
 
-const items = [];
+const DATA_FILE = process.env.HEATPULSE_DEV_DATA_FILE || path.join(__dirname, ".local-data.json");
+const items = loadItems(DATA_FILE);
+
+function persistItems() {
+  saveItems(DATA_FILE, items);
+}
 
 class GetCommand { constructor(input) { this.input = input; this.kind = "get"; } }
 class QueryCommand { constructor(input) { this.input = input; this.kind = "query"; } }
@@ -46,6 +53,7 @@ const fakeLib = {
             }
             if (index >= 0) items[index] = { ...input.Item };
             else items.push({ ...input.Item });
+            persistItems();
             return {};
           }
           if (command.kind === "transact") {
@@ -75,6 +83,7 @@ const fakeLib = {
               delete worker.activeBreakZoneId;
             }
             items.push({ ...put.Put.Item });
+            persistItems();
             return {};
           }
 
@@ -225,5 +234,5 @@ const server = http.createServer((request, response) => {
 
 const port = Number(process.env.PORT) || 3000;
 server.listen(port, () => {
-  console.log(`HeatPulse local API on http://localhost:${port} (in-memory; manager subject: local-manager)`);
+  console.log(`HeatPulse local API on http://localhost:${server.address().port} (persistent local data; manager subject: local-manager)`);
 });

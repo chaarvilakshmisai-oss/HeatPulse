@@ -1,6 +1,12 @@
 import { MOCK_ZONES } from '../data/mock.js';
 import { estimateExposure } from './exposure.js';
-import { getIdToken, isDemoMode, signOut } from './auth.js';
+import {
+  getCurrentUser,
+  getIdToken,
+  isDemoMode,
+  isManagerLoginFlowActive,
+  signOut,
+} from './auth.js';
 import { API_BASE_URL, buildApiUrl } from './config.js';
 
 const DEMO_SITE_ID = 'sample-site';
@@ -30,6 +36,15 @@ const demoReports = [];
 const REQUEST_TIMEOUT_MS = 15_000;
 const NETWORK_ERROR_MESSAGE = "Can't reach the server. Check your connection and try again.";
 const SESSION_EXPIRED_MESSAGE = 'Your session expired. Please sign in again.';
+let siteCache;
+let siteCachePromise;
+let hasSiteCache = false;
+
+export function invalidateSiteCache() {
+  siteCache = undefined;
+  siteCachePromise = undefined;
+  hasSiteCache = false;
+}
 
 function distanceBetween(lat1, lon1, lat2, lon2) {
   const radians = (degrees) => degrees * Math.PI / 180;
@@ -71,10 +86,10 @@ async function request(path, options = {}, manager = false) {
   const method = (options.method || 'GET').toUpperCase();
   const headers = new Headers(options.headers || {});
   if (options.body !== undefined) headers.set('Content-Type', 'application/json');
-  if (manager && !isDemoMode()) headers.set('Authorization', await getIdToken());
 
   let response;
   let payload;
+  if (manager && !isDemoMode()) headers.set('Authorization', await getIdToken());
   for (let attempt = 0; attempt < (method === 'GET' ? 2 : 1); attempt += 1) {
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
@@ -96,11 +111,23 @@ async function request(path, options = {}, manager = false) {
 
   if (!response.ok) {
     if (manager && response.status === 401) {
-      signOut();
-      if (typeof window !== 'undefined') {
-        window.dispatchEvent(new Event('heatpulse:unauthorized'));
+      const loginFlow = isManagerLoginFlowActive();
+      if (loginFlow) {
+        throw new ApiError(
+          `Server rejected your token (${response.status})`,
+          response.status,
+          errorCode(payload),
+        );
       }
-      throw new ApiError(SESSION_EXPIRED_MESSAGE, response.status, errorCode(payload));
+      const activeUser = await getCurrentUser();
+      if (activeUser) {
+        signOut();
+        invalidateSiteCache();
+        if (typeof window !== 'undefined') {
+          window.dispatchEvent(new Event('heatpulse:unauthorized'));
+        }
+        throw new ApiError(SESSION_EXPIRED_MESSAGE, response.status, errorCode(payload));
+      }
     }
     throw new ApiError(
       payload?.error || payload?.message || `Request failed (${response.status}). Please try again.`,
@@ -148,12 +175,27 @@ export async function sendReport(report) {
 
 export async function getSite() {
   if (isDemoMode()) return structuredClone(demoSite);
-  try {
-    return await request('/site', {}, true);
-  } catch (error) {
-    if (error.status === 404) return null;
-    throw error;
-  }
+  if (hasSiteCache) return siteCache;
+  if (siteCachePromise) return siteCachePromise;
+
+  const pending = request('/site', {}, true)
+    .catch((error) => {
+      if (error instanceof ApiError && error.status === 404) return null;
+      throw error;
+    })
+    .then((site) => {
+      if (siteCachePromise === pending) {
+        siteCache = site;
+        hasSiteCache = true;
+        siteCachePromise = undefined;
+      }
+      return site;
+    }, (error) => {
+      if (siteCachePromise === pending) siteCachePromise = undefined;
+      throw error;
+    });
+  siteCachePromise = pending;
+  return pending;
 }
 
 export async function saveSite(site) {
@@ -183,9 +225,12 @@ export async function saveSite(site) {
     Object.assign(demoSite, savedSite, { zones, siteId: DEMO_SITE_ID });
     if (verified) demoSite.locationVerifiedAt = new Date().toISOString();
     else if (movedPlant) demoSite.locationVerifiedAt = null;
+    invalidateSiteCache();
     return { site: structuredClone(demoSite), locationCheck };
   }
-  return request('/site', { method: 'PUT', body: JSON.stringify(site) }, true);
+  const result = await request('/site', { method: 'PUT', body: JSON.stringify(site) }, true);
+  invalidateSiteCache();
+  return result;
 }
 
 export async function getZones() {

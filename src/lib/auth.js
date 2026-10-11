@@ -2,6 +2,7 @@ import { CognitoUser, CognitoUserPool, AuthenticationDetails } from 'amazon-cogn
 import { IS_DEMO_MODE, USER_POOL_CLIENT_ID, USER_POOL_ID } from './config.js';
 
 let userPool;
+let managerLoginFlowActive = false;
 
 function getUserPool() {
   if (IS_DEMO_MODE) return null;
@@ -9,7 +10,6 @@ function getUserPool() {
     userPool = new CognitoUserPool({
       UserPoolId: USER_POOL_ID,
       ClientId: USER_POOL_CLIENT_ID,
-      Storage: window.sessionStorage,
     });
   }
   return userPool;
@@ -27,21 +27,28 @@ function clearStorageKeys(storage) {
   }
 }
 
-export function clearLegacyCognitoSession() {
-  if (typeof window === 'undefined') return;
-  clearStorageKeys(window.localStorage);
-}
-
 export function clearCognitoSessionStorage() {
   if (typeof window === 'undefined') return;
   clearStorageKeys(window.sessionStorage);
   clearStorageKeys(window.localStorage);
 }
 
-if (typeof window !== 'undefined') clearLegacyCognitoSession();
+export function initializeBrowserSession(storage = window.sessionStorage, clearSession = signOut) {
+  if (storage.getItem('heatpulse:session-started')) return;
+  clearSession();
+  storage.setItem('heatpulse:session-started', 'true');
+}
 
 export function isDemoMode() {
   return IS_DEMO_MODE;
+}
+
+export function setManagerLoginFlowActive(active) {
+  managerLoginFlowActive = active;
+}
+
+export function isManagerLoginFlowActive() {
+  return managerLoginFlowActive;
 }
 
 export function signIn(email, password) {

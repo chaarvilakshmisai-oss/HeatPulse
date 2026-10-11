@@ -9,3 +9,5 @@ dist
 dist/
 .aws-sam/
 *.zip
+backend/.local-data.json
+backend/.local-data.json.*.tmp

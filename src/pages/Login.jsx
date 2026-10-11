@@ -1,12 +1,25 @@
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
-import { getCurrentUser, isDemoMode, signIn, signOut } from '../lib/auth.js';
-import { getSite } from '../lib/api.js';
+import {
+  isDemoMode,
+  setManagerLoginFlowActive,
+  signIn,
+} from '../lib/auth.js';
+import { getSite, invalidateSiteCache } from '../lib/api.js';
 import Sky from '../components/Sky.jsx';
 
-export async function prepareLoginSession(readCurrentUser = getCurrentUser, clearSession = signOut) {
-  await readCurrentUser();
-  clearSession();
+export async function routeManagerByPlant(loadSite, navigate) {
+  const site = await loadSite();
+  navigate(site ? '/app/dashboard' : '/app/site', {
+    replace: true,
+    ...(site ? {} : { state: { setupRequired: true } }),
+  });
+}
+
+export async function completeManagerSignIn(signInManager, loadSite, navigate) {
+  await signInManager();
+  invalidateSiteCache();
+  await routeManagerByPlant(loadSite, navigate);
 }
 
 export default function Login() {
@@ -14,51 +27,40 @@ export default function Login() {
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
-  const [preparing, setPreparing] = useState(true);
   const [error, setError] = useState('');
   const location = useLocation();
   const navigate = useNavigate();
   const demoMode = isDemoMode();
 
   async function continueToManagerApp() {
+    setManagerLoginFlowActive(true);
     try {
-      const site = await getSite();
-      navigate(site ? '/app/dashboard' : '/app/site', {
-        replace: true,
-        ...(site ? {} : { state: { setupRequired: true } }),
-      });
+      await routeManagerByPlant(getSite, navigate);
     } catch (siteError) {
       setError(`Signed in, but plant status could not be loaded: ${siteError.message || 'Please retry.'}`);
+    } finally {
+      setManagerLoginFlowActive(false);
     }
   }
 
-  useEffect(() => {
-    let active = true;
-    prepareLoginSession()
-      .catch((sessionError) => {
-        if (active) setError(sessionError.message || 'Unable to clear the saved session. Please try again.');
-      })
-      .finally(() => {
-        if (active) setPreparing(false);
-      });
-    return () => {
-      active = false;
-    };
-  }, []);
-
   async function handleSubmit(event) {
     event.preventDefault();
-    if (loading || preparing) return;
+    if (loading) return;
     setLoading(true);
     setError('');
+    setManagerLoginFlowActive(true);
     try {
-      await signIn(email.trim(), password);
-      await continueToManagerApp();
+      await completeManagerSignIn(
+        () => signIn(email.trim(), password),
+        getSite,
+        navigate,
+      );
     } catch (signInError) {
       setError(signInError.name === 'NotAuthorizedException' || signInError.code === 'NotAuthorizedException'
         ? 'Incorrect email or password'
         : signInError.message || 'Unable to sign in. Please try again.');
     } finally {
+      setManagerLoginFlowActive(false);
       setLoading(false);
     }
   }
@@ -79,7 +81,6 @@ export default function Login() {
           {error.startsWith('Signed in, but plant status') && (
             <button className="secondary-button" type="button" onClick={continueToManagerApp}>Retry plant check</button>
           )}
-          {preparing && <p role="status">Preparing sign in…</p>}
           <form onSubmit={handleSubmit}>
             <label htmlFor="manager-email">Email</label>
             <input id="manager-email" type="email" autoComplete="username" value={email} onChange={(event) => setEmail(event.target.value)} required={!demoMode} />
@@ -89,8 +90,8 @@ export default function Login() {
               <input type="checkbox" checked={showPassword} onChange={(event) => setShowPassword(event.target.checked)} />
               Show password
             </label>
-            <button className="primary-button login-submit" type="submit" disabled={loading || preparing}>
-              {preparing ? 'Preparing…' : loading ? 'Signing in…' : demoMode ? 'Continue in demo mode' : 'Sign in'}
+            <button className="primary-button login-submit" type="submit" disabled={loading}>
+              {loading ? 'Signing in…' : demoMode ? 'Continue in demo mode' : 'Sign in'}
             </button>
           </form>
           <p className="login-footer">Accounts are created by your plant admin.</p>

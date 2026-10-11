@@ -1,7 +1,7 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { BrowserRouter as Router, Navigate, Outlet, Route, Routes, useLocation, useNavigate } from 'react-router-dom';
 import { getCurrentUser, isDemoMode, signOut } from './lib/auth.js';
-import { getSite } from './lib/api.js';
+import { getSite, invalidateSiteCache } from './lib/api.js';
 import Dashboard from './pages/Dashboard.jsx';
 import Login from './pages/Login.jsx';
 import Tap from './pages/Tap.jsx';
@@ -19,22 +19,6 @@ import Sky from './components/Sky.jsx';
 
 export const UNKNOWN_ROUTE = '/';
 export const HOME_ROUTE = UNKNOWN_ROUTE;
-export const MANAGER_IDLE_TIMEOUT_MS = 30 * 60 * 1000;
-
-export function startManagerIdleTimeout(onTimeout, timeoutMs = MANAGER_IDLE_TIMEOUT_MS, target = window) {
-  let timeout;
-  const reset = () => {
-    clearTimeout(timeout);
-    timeout = setTimeout(onTimeout, timeoutMs);
-  };
-  const events = ['pointerdown', 'keydown', 'scroll', 'touchstart', 'mousemove'];
-  events.forEach((eventName) => target.addEventListener(eventName, reset, { passive: true }));
-  reset();
-  return () => {
-    clearTimeout(timeout);
-    events.forEach((eventName) => target.removeEventListener(eventName, reset));
-  };
-}
 
 export function ConfigurationProblem({ missing }) {
   return (
@@ -65,11 +49,6 @@ export function protectedRouteDecision(user, location) {
   return { status: 'allow' };
 }
 
-export function expireManagerSession(clearSession, redirect) {
-  clearSession();
-  redirect();
-}
-
 function ProtectedRoute() {
   const location = useLocation();
   const [user, setUser] = useState(isDemoMode() ? { email: 'Demo manager', demo: true } : undefined);
@@ -90,13 +69,6 @@ function ProtectedRoute() {
   }, []);
 
   const decision = protectedRouteDecision(user, location);
-  useEffect(() => {
-    if (decision.status !== 'allow' || !user) return undefined;
-    return startManagerIdleTimeout(() => expireManagerSession(signOut, () => navigate('/login', {
-      replace: true,
-      state: { message: 'You were signed out after a period of inactivity.' },
-    })));
-  }, [decision.status, user, navigate]);
   if (decision.status === 'loading') return <div className="route-loading" role="status">Checking your session…</div>;
   if (decision.status === 'redirect') {
     return <Navigate to="/login" replace state={{ from: decision.from }} />;
@@ -105,7 +77,16 @@ function ProtectedRoute() {
 }
 
 function ManagerRoutes() {
+  const location = useLocation();
   const navigate = useNavigate();
+  const previousPathname = useRef(location.pathname);
+
+  useLayoutEffect(() => {
+    if (previousPathname.current !== location.pathname) {
+      previousPathname.current = location.pathname;
+      invalidateSiteCache();
+    }
+  }, [location.pathname]);
 
   useEffect(() => {
     function handleUnauthorized() {
@@ -124,10 +105,10 @@ function ManagerRoutes() {
       <Route path="/tap" element={<Tap />} />
       <Route path="/app" element={<ProtectedRoute />}>
         <Route path="home" element={<ManagerHome />} />
+        <Route path="site" element={<Site />} />
         <Route element={<SiteRequired />}>
           <Route path="dashboard" element={<Dashboard />} />
           <Route path="zones" element={<Zones />} />
-          <Route path="site" element={<Site />} />
           <Route path="qr" element={<QrCodes />} />
           <Route path="reports" element={<Reports />} />
           <Route path="workers" element={<Workers />} />

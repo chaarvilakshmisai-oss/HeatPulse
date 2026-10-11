@@ -5,17 +5,14 @@ import { renderToString } from 'react-dom/server';
 import { MemoryRouter } from 'react-router-dom';
 import {
   HOME_ROUTE,
-  MANAGER_IDLE_TIMEOUT_MS,
   UNKNOWN_ROUTE,
-  expireManagerSession,
   protectedRouteDecision,
-  startManagerIdleTimeout,
 } from '../App.jsx';
 import Welcome, { LandingNavActions } from '../pages/Welcome.jsx';
-import Login, { prepareLoginSession } from '../pages/Login.jsx';
+import Login, { completeManagerSignIn } from '../pages/Login.jsx';
 import ManagerHome, { ManagerHomeContent } from '../pages/ManagerHome.jsx';
 import { WORKER_NOT_FOUND_MESSAGE, workerLookupErrorMessage } from '../pages/WorkerLogin.jsx';
-import { clearLegacyCognitoSession, signOut } from './auth.js';
+import { clearCognitoSessionStorage, initializeBrowserSession, signOut } from './auth.js';
 
 describe('protected route decision', () => {
   it('redirects unauthenticated users to login with their intended URL', () => {
@@ -71,7 +68,22 @@ describe('public routes and manager home', () => {
     expect(UNKNOWN_ROUTE).toBe('/');
   });
 
-  it('renders the sign-in form and clears an existing session before showing it', async () => {
+  it('keeps /app/site outside the plant-required guard', () => {
+    const appSource = readFileSync(new URL('../App.jsx', import.meta.url), 'utf8');
+    const protectedSiteRoute = appSource.indexOf('<Route path="site" element={<Site />} />');
+    const siteRequiredGuard = appSource.indexOf('<Route element={<SiteRequired />}>');
+
+    expect(protectedSiteRoute).toBeGreaterThan(-1);
+    expect(protectedSiteRoute).toBeLessThan(siteRequiredGuard);
+  });
+
+  it('invalidates the shared plant result only when the pathname changes', () => {
+    const appSource = readFileSync(new URL('../App.jsx', import.meta.url), 'utf8');
+    expect(appSource).toContain('previousPathname.current !== location.pathname');
+    expect(appSource).toContain('invalidateSiteCache();');
+  });
+
+  it('renders the sign-in form without clearing a session on page load', () => {
     const html = renderToString(createElement(
       MemoryRouter,
       null,
@@ -80,12 +92,20 @@ describe('public routes and manager home', () => {
     expect(html).toContain('Manager sign in');
     expect(html).toContain('manager-email');
     expect(html).toContain('manager-password');
+  });
 
-    const readCurrentUser = vi.fn().mockResolvedValue({ email: 'remembered@example.com' });
-    const clearSession = vi.fn();
-    await prepareLoginSession(readCurrentUser, clearSession);
-    expect(readCurrentUser).toHaveBeenCalledOnce();
-    expect(clearSession).toHaveBeenCalledOnce();
+  it('routes a successful sign-in to dashboard or setup based on plant status', async () => {
+    const signInManager = vi.fn().mockResolvedValue(undefined);
+    const navigate = vi.fn();
+    await completeManagerSignIn(signInManager, async () => ({ name: 'Plant' }), navigate);
+    expect(navigate).toHaveBeenLastCalledWith('/app/dashboard', { replace: true });
+
+    navigate.mockClear();
+    await completeManagerSignIn(signInManager, async () => null, navigate);
+    expect(navigate).toHaveBeenLastCalledWith('/app/site', {
+      replace: true,
+      state: { setupRequired: true },
+    });
   });
 
   it('renders registered and not-registered plant states on manager home', () => {
@@ -113,35 +133,7 @@ describe('public routes and manager home', () => {
   });
 });
 
-describe('manager idle timeout', () => {
-  it('signs out and redirects after the configured idle duration', () => {
-    vi.useFakeTimers();
-    const events = new Map();
-    const target = {
-      addEventListener: vi.fn((name, callback) => events.set(name, callback)),
-      removeEventListener: vi.fn((name) => events.delete(name)),
-    };
-    const clearSession = vi.fn();
-    const redirect = vi.fn();
-    const cleanup = startManagerIdleTimeout(
-      () => expireManagerSession(clearSession, redirect),
-      MANAGER_IDLE_TIMEOUT_MS,
-      target
-    );
-
-    vi.advanceTimersByTime(MANAGER_IDLE_TIMEOUT_MS - 1);
-    expect(clearSession).not.toHaveBeenCalled();
-    vi.advanceTimersByTime(1);
-    expect(clearSession).toHaveBeenCalledOnce();
-    expect(redirect).toHaveBeenCalledOnce();
-    expect(MANAGER_IDLE_TIMEOUT_MS).toBe(30 * 60 * 1000);
-    cleanup();
-    expect(events.size).toBe(0);
-    vi.useRealTimers();
-  });
-});
-
-describe('Cognito session storage', () => {
+describe('browser session initialization and Cognito storage', () => {
   function makeStorage(entries) {
     const values = new Map(Object.entries(entries));
     return {
@@ -153,7 +145,7 @@ describe('Cognito session storage', () => {
     };
   }
 
-  it('clears legacy Cognito localStorage and Cognito cache from both storages', () => {
+  it('clears Cognito cache from both storages on sign-out', () => {
     const localStorage = makeStorage({
       'CognitoIdentityServiceProvider.pool.user.idToken': 'old-token',
       'app.preference': 'keep',
@@ -164,27 +156,45 @@ describe('Cognito session storage', () => {
     });
     vi.stubGlobal('window', { localStorage, sessionStorage });
 
-    clearLegacyCognitoSession();
-    expect(localStorage.getItem('CognitoIdentityServiceProvider.pool.user.idToken')).toBeNull();
     expect(localStorage.getItem('app.preference')).toBe('keep');
-    localStorage.setItem('CognitoIdentityServiceProvider.pool.user.refreshToken', 'token');
     signOut();
-    expect(localStorage.getItem('CognitoIdentityServiceProvider.pool.user.refreshToken')).toBeNull();
+    expect(localStorage.getItem('CognitoIdentityServiceProvider.pool.user.idToken')).toBeNull();
     expect(sessionStorage.getItem('CognitoIdentityServiceProvider.pool.user.accessToken')).toBeNull();
     expect(sessionStorage.getItem('app.temporary')).toBe('keep');
     vi.unstubAllGlobals();
   });
 
-  it('configures Cognito tokens to use sessionStorage', () => {
+  it('uses the SDK default localStorage and the shared ID-token getter', () => {
     const authSource = readFileSync(new URL('./auth.js', import.meta.url), 'utf8');
-    expect(authSource).toContain('Storage: window.sessionStorage');
+    expect(authSource).not.toContain('Storage: window.sessionStorage');
+    expect(authSource).toContain('export function getIdToken()');
   });
 
-  it('clears any saved Cognito state on login even when the session is invalid', async () => {
-    const readCurrentUser = vi.fn().mockResolvedValue(null);
+  it('signs out once per browser session, then preserves later sign-ins across reloads', () => {
+    const values = new Map();
+    const sessionStorage = {
+      getItem: (key) => values.get(key) || null,
+      setItem: (key, value) => values.set(key, value),
+    };
     const clearSession = vi.fn();
-    await prepareLoginSession(readCurrentUser, clearSession);
-    expect(readCurrentUser).toHaveBeenCalledOnce();
+    initializeBrowserSession(sessionStorage, clearSession);
+    sessionStorage.setItem('manager-session', 'signed-in');
+    initializeBrowserSession(sessionStorage, clearSession);
+    expect(clearSession).toHaveBeenCalledOnce();
+    expect(sessionStorage.getItem('heatpulse:session-started')).toBe('true');
+    expect(sessionStorage.getItem('manager-session')).toBe('signed-in');
+  });
+
+  it('runs startup sign-out again in a new browser session', () => {
+    const values = new Map();
+    const sessionStorage = {
+      getItem: (key) => values.get(key) || null,
+      setItem: (key, value) => values.set(key, value),
+    };
+    const clearSession = vi.fn();
+
+    initializeBrowserSession(sessionStorage, clearSession);
+
     expect(clearSession).toHaveBeenCalledOnce();
   });
 });

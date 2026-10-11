@@ -1,8 +1,11 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const auth = vi.hoisted(() => ({
+  getCurrentUser: vi.fn(),
   getIdToken: vi.fn(),
   isDemoMode: vi.fn(() => false),
+  isManagerLoginFlowActive: vi.fn(() => false),
+  signIn: vi.fn(),
   signOut: vi.fn(),
 }));
 
@@ -18,6 +21,7 @@ import {
   getPublicSite,
   getReports,
   getSite,
+  invalidateSiteCache,
   getBreakSummary,
   getWorkerPlan,
   getWorkerPlanById,
@@ -29,6 +33,7 @@ import {
   saveWorker,
   sendReport,
 } from './api.js';
+import { completeManagerSignIn } from '../pages/Login.jsx';
 
 const API_BASE = 'https://api.example.test';
 
@@ -73,9 +78,15 @@ function expectPublicRequest({ url, method = 'GET', body }) {
 }
 
 beforeEach(() => {
+  invalidateSiteCache();
   vi.stubGlobal('fetch', vi.fn());
+  auth.getIdToken.mockClear();
   auth.getIdToken.mockResolvedValue('manager-id-token');
+  auth.getCurrentUser.mockClear();
+  auth.getCurrentUser.mockResolvedValue(null);
   auth.isDemoMode.mockReturnValue(false);
+  auth.isManagerLoginFlowActive.mockClear();
+  auth.isManagerLoginFlowActive.mockReturnValue(false);
   auth.signOut.mockReset();
 });
 
@@ -110,13 +121,137 @@ describe('frontend API contract', () => {
     const site = { siteId: 'local-manager', name: 'Plant', zones: [] };
     fetch.mockResolvedValueOnce(jsonResponse(site));
     await expect(getSite()).resolves.toEqual(site);
+    expect(auth.getIdToken).toHaveBeenCalledOnce();
     expectManagerRequest({ url: '/site' });
+  });
+
+  it('shares one site request per navigation and invalidates after a save', async () => {
+    const site = { siteId: 'local-manager', name: 'INDUSTRY1', zones: [] };
+    fetch
+      .mockResolvedValueOnce(jsonResponse(site))
+      .mockResolvedValueOnce(jsonResponse(site))
+      .mockResolvedValueOnce(jsonResponse({ site, locationCheck: null }))
+      .mockResolvedValueOnce(jsonResponse({ ...site, name: 'Updated plant' }));
+
+    const [fromGuard, fromShell] = await Promise.all([getSite(), getSite()]);
+    expect(fromGuard).toEqual(site);
+    expect(fromShell).toEqual(site);
+    expect(fetch).toHaveBeenCalledOnce();
+    await expect(getSite()).resolves.toEqual(site);
+    expect(fetch).toHaveBeenCalledOnce();
+
+    invalidateSiteCache();
+    await expect(getSite()).resolves.toEqual(site);
+    expect(fetch).toHaveBeenCalledTimes(2);
+
+    await saveSite(site);
+    await expect(getSite()).resolves.toEqual({ ...site, name: 'Updated plant' });
+    expect(fetch).toHaveBeenCalledTimes(4);
+  });
+
+  it('reports a login-flow plant request status and whether an ID token was attached', async () => {
+    const site = { siteId: 'local-manager', name: 'Plant', zones: [] };
+    auth.signIn.mockResolvedValue({ email: 'manager@example.com' });
+    auth.getIdToken.mockResolvedValue('mock-id-token');
+    auth.isManagerLoginFlowActive.mockReturnValue(true);
+    fetch.mockResolvedValueOnce(jsonResponse(site));
+    const navigate = vi.fn();
+
+    await completeManagerSignIn(
+      () => auth.signIn('manager@example.com', 'password'),
+      getSite,
+      navigate,
+    );
+
+    const authorization = lastRequest().headers.get('Authorization');
+    const requestStatus = fetch.mock.results[0].value.then((response) => response.status);
+    await expect(requestStatus).resolves.toBe(200);
+    expect(authorization).toBeTruthy();
+    expect(auth.getIdToken).toHaveBeenCalledOnce();
+    expect(navigate).toHaveBeenCalledWith('/app/dashboard', { replace: true });
+  });
+
+  it('loads no site, saves one, then reloads the manager site through the login flow', async () => {
+    const site = {
+      siteId: 'local-manager',
+      name: 'INDUSTRY1',
+      lat: 37.7749,
+      lon: -122.4194,
+      radiusM: 300,
+      requireLocation: false,
+      timeZone: 'UTC',
+      zones: [{ id: 'zone-1', name: 'Furnace' }],
+    };
+    const responses = [
+      jsonResponse({ error: 'No site yet' }, 404),
+      jsonResponse({ site, locationCheck: null }, 200),
+      jsonResponse(site, 200),
+    ];
+    const statuses = [];
+    fetch.mockImplementation(async () => {
+      const response = responses.shift();
+      statuses.push(response.status);
+      return response;
+    });
+    auth.isManagerLoginFlowActive.mockReturnValue(true);
+    const navigate = vi.fn();
+    let noSite;
+
+    await completeManagerSignIn(
+      () => auth.signIn('manager@example.com', 'password'),
+      async () => {
+        noSite = await getSite();
+        return noSite;
+      },
+      navigate,
+    );
+    await saveSite(site);
+    const reloadedSite = await getSite();
+
+    expect(statuses).toEqual([404, 200, 200]);
+    expect(noSite).toBeNull();
+    expect(reloadedSite).toEqual(site);
+    expect(navigate).toHaveBeenCalledWith('/app/site', {
+      replace: true,
+      state: { setupRequired: true },
+    });
+    expect(fetch.mock.calls.every(([, options]) => (
+      new Headers(options.headers).has('Authorization')
+    ))).toBe(true);
+  });
+
+  it('shows the actual 401 during login without dispatching an expired-session event', async () => {
+    const dispatchEvent = vi.fn();
+    vi.stubGlobal('window', { dispatchEvent });
+    auth.isManagerLoginFlowActive.mockReturnValue(true);
+    fetch.mockResolvedValueOnce(jsonResponse({ error: 'Unauthorized' }, 401));
+
+    await expect(getSite()).rejects.toMatchObject({
+      message: 'Server rejected your token (401)',
+      status: 401,
+    });
+    expect(fetch).toHaveBeenCalledOnce();
+    expect(auth.signOut).not.toHaveBeenCalled();
+    expect(dispatchEvent).not.toHaveBeenCalled();
   });
 
   it('maps the manager site 404 (No site yet) to null', async () => {
     fetch.mockResolvedValueOnce(jsonResponse({ error: 'No site yet' }, 404));
     await expect(getSite()).resolves.toBeNull();
     expectManagerRequest({ url: '/site' });
+  });
+
+  it('does not map non-404 site errors to a missing plant and permits retry', async () => {
+    fetch
+      .mockResolvedValueOnce(jsonResponse({ error: 'Backend unavailable' }, 503))
+      .mockResolvedValueOnce(jsonResponse({ error: 'No site yet' }, 404));
+
+    await expect(getSite()).rejects.toMatchObject({
+      status: 503,
+      message: 'Backend unavailable',
+    });
+    await expect(getSite()).resolves.toBeNull();
+    expect(fetch).toHaveBeenCalledTimes(2);
   });
 
   it('saves the complete manager site payload with PUT', async () => {
@@ -271,16 +406,31 @@ describe('frontend API contract', () => {
   it('signs out and dispatches a login redirect on manager 401', async () => {
     const dispatchEvent = vi.fn();
     vi.stubGlobal('window', { dispatchEvent });
+    auth.getCurrentUser.mockResolvedValue({ email: 'manager@example.com' });
     fetch.mockResolvedValueOnce(jsonResponse({ error: 'Unauthorized' }, 401));
 
     await expect(getZones()).rejects.toMatchObject({
       message: 'Your session expired. Please sign in again.',
       status: 401,
     });
+    expect(fetch).toHaveBeenCalledOnce();
     expect(auth.signOut).toHaveBeenCalledOnce();
     expect(dispatchEvent).toHaveBeenCalledOnce();
     expect(dispatchEvent.mock.calls[0][0].type).toBe('heatpulse:unauthorized');
     expectManagerRequest({ url: '/zones' });
+  });
+
+  it('does not dispatch unauthorized for a manager 401 without an active session', async () => {
+    const dispatchEvent = vi.fn();
+    vi.stubGlobal('window', { dispatchEvent });
+    fetch
+      .mockResolvedValueOnce(jsonResponse({ error: 'Unauthorized' }, 401))
+      .mockResolvedValueOnce(jsonResponse({ error: 'Unauthorized' }, 401));
+
+    await expect(getZones()).rejects.toMatchObject({ status: 401 });
+    expect(auth.getCurrentUser).toHaveBeenCalledOnce();
+    expect(auth.signOut).not.toHaveBeenCalled();
+    expect(dispatchEvent).not.toHaveBeenCalled();
   });
 
   it('retries a failed GET once after a network error', async () => {
