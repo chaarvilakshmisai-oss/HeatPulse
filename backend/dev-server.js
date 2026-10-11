@@ -28,6 +28,7 @@ function persistItems() {
 class GetCommand { constructor(input) { this.input = input; this.kind = "get"; } }
 class QueryCommand { constructor(input) { this.input = input; this.kind = "query"; } }
 class PutCommand { constructor(input) { this.input = input; this.kind = "put"; } }
+class DeleteCommand { constructor(input) { this.input = input; this.kind = "delete"; } }
 class TransactWriteCommand { constructor(input) { this.input = input; this.kind = "transact"; } }
 
 function indexKey(item, indexName) {
@@ -38,6 +39,7 @@ const fakeLib = {
   GetCommand,
   QueryCommand,
   PutCommand,
+  DeleteCommand,
   TransactWriteCommand,
   DynamoDBDocumentClient: {
     from() {
@@ -61,6 +63,14 @@ const fakeLib = {
             }
             if (index >= 0) items[index] = { ...input.Item };
             else items.push({ ...input.Item });
+            persistItems();
+            return {};
+          }
+          if (command.kind === "delete") {
+            const index = items.findIndex((entry) => (
+              entry.zoneId === input.Key.zoneId && entry.ts === input.Key.ts
+            ));
+            if (index >= 0) items.splice(index, 1);
             persistItems();
             return {};
           }
@@ -97,7 +107,7 @@ const fakeLib = {
 
           const values = input.ExpressionAttributeValues;
           const partitionAttribute = input.IndexName ? indexKey(null, input.IndexName) : "zoneId";
-          const partition = values[":zoneId"] || values[":workerKey"] || values[":day"] || values[":z"];
+          const partition = values[":zoneId"] || values[":owner"] || values[":workerKey"] || values[":day"] || values[":z"];
           const since = values[":since"];
           const prefix = values[":reportPrefix"] || values[":workerPrefix"] || values[":breakPrefix"];
           const sortAttribute = input.IndexName === "WorkerBreaksIndex"
@@ -143,7 +153,7 @@ Module._load = function (request, ...rest) {
 
 process.env.TABLE_NAME = "heatpulse-reports";
 process.env.ALLOW_ORIGIN = "*";
-const { handler } = require("./src/app");
+const { handler, migrateLegacySite } = require("./src/app");
 
 const CORS = {
   "access-control-allow-origin": "*",
@@ -158,6 +168,11 @@ function publicSiteId(path) {
 
 function routeKey(method, path) {
   if (path.startsWith("/public/sites/")) return `${method} /public/sites/{siteId}`;
+  if (/^\/plants\/[^/]+\/workers\/[^/]+$/.test(path)) return `${method} /plants/{plantId}/workers/{workerId}`;
+  if (/^\/plants\/[^/]+\/workers$/.test(path)) return `${method} /plants/{plantId}/workers`;
+  const nestedPlant = path.match(/^\/plants\/[^/]+(?:\/(?:zones|reports|breaks))?$/);
+  if (nestedPlant) return `${method} ${nestedPlant[0].replace(/^\/plants\/[^/]+/, "/plants/{plantId}")}`;
+  if (path === "/plants") return `${method} /plants`;
   if (/^\/public\/workers\/[^/]+\/[^/]+\/[^/]+\/breaks$/.test(path)) {
     return `${method} /public/workers/{siteId}/{zoneId}/{workerId}/breaks`;
   }
@@ -206,6 +221,7 @@ const server = http.createServer((request, response) => {
     }
 
     const body = Buffer.concat(chunks).toString("utf8");
+    const nestedPlantMatch = path.match(/^\/plants\/([^/]+)(?:\/workers(?:\/([^/]+))?|\/(zones|reports|breaks))?$/);
     const publicWorkerMatch = path.match(/^\/public\/workers\/([^/]+)\/([^/]+)\/([^/]+)(?:\/breaks)?$/);
     const publicWorkerByIdMatch = path.match(/^\/public\/workers\/([^/]+)\/([^/]+)$/);
     const workerMatch = path.match(/^\/workers\/([^/]+)$/);
@@ -213,6 +229,8 @@ const server = http.createServer((request, response) => {
       routeKey: key,
       rawPath: path,
       pathParameters: {
+        plantId: nestedPlantMatch?.[1] ? decodeURIComponent(nestedPlantMatch[1]) : undefined,
+        workerId: nestedPlantMatch?.[2] ? decodeURIComponent(nestedPlantMatch[2]) : undefined,
         siteId: publicSiteId(path)
           || (publicWorkerMatch ? decodeURIComponent(publicWorkerMatch[1]) : undefined)
           || (publicWorkerByIdMatch ? decodeURIComponent(publicWorkerByIdMatch[1]) : undefined),
@@ -243,6 +261,13 @@ const server = http.createServer((request, response) => {
 });
 
 const port = Number(process.env.PORT) || 3000;
-server.listen(port, () => {
-  console.log(`HeatPulse local API on http://localhost:${server.address().port} (persistent local data; manager subject: local-manager)`);
-});
+migrateLegacySite("local-manager")
+  .then(() => {
+    server.listen(port, () => {
+      console.log(`HeatPulse local API on http://localhost:${server.address().port} (persistent local data; manager subject: local-manager)`);
+    });
+  })
+  .catch((error) => {
+    console.error("Unable to migrate local plant data", error.message);
+    process.exitCode = 1;
+  });

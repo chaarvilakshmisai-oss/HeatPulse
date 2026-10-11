@@ -8,12 +8,14 @@ const rows = new Map();
 
 class GetCommand { constructor(input) { this.input = input; this.kind = "get"; } }
 class PutCommand { constructor(input) { this.input = input; this.kind = "put"; } }
+class DeleteCommand { constructor(input) { this.input = input; this.kind = "delete"; } }
 class QueryCommand { constructor(input) { this.input = input; this.kind = "query"; } }
 class TransactWriteCommand { constructor(input) { this.input = input; this.kind = "transact"; } }
 
 const fakeDynamo = {
   GetCommand,
   PutCommand,
+  DeleteCommand,
   QueryCommand,
   TransactWriteCommand,
   DynamoDBDocumentClient: {
@@ -32,6 +34,10 @@ const fakeDynamo = {
               throw error;
             }
             rows.set(key, input.Item);
+            return {};
+          }
+          if (command.kind === "delete") {
+            rows.delete(`${input.Key.zoneId}|${input.Key.ts}`);
             return {};
           }
           if (command.kind === "transact") {
@@ -67,7 +73,7 @@ const fakeDynamo = {
           const partitionAttribute = input.IndexName === "WorkerBreaksIndex"
             ? "gsi1pk"
             : input.IndexName === "BreaksByPlantDayIndex" ? "gsi2pk" : "zoneId";
-          const partition = values[":zoneId"] || values[":workerKey"] || values[":day"];
+          const partition = values[":zoneId"] || values[":owner"] || values[":workerKey"] || values[":day"];
           const sortAttribute = input.IndexName === "WorkerBreaksIndex"
             ? "gsi1sk"
             : input.IndexName === "BreaksByPlantDayIndex" ? "gsi2sk" : "ts";
@@ -92,7 +98,7 @@ Module._load = function (request, ...args) {
   return originalLoad.call(this, request, ...args);
 };
 process.env.TABLE_NAME = "heatpulse-test";
-const { handler } = require("../src/app");
+const { handler, migrateLegacySite } = require("../src/app");
 Module._load = originalLoad;
 
 const managerSub = "manager-test-sub";
@@ -113,11 +119,11 @@ const siteInput = {
   zones: [zoneInput],
 };
 
-function event(routeKey, { body, siteId, zoneId, workerId, query, sub = managerSub } = {}) {
+function event(routeKey, { body, siteId, plantId, zoneId, workerId, query, sub = managerSub } = {}) {
   return {
     routeKey,
     body: body === undefined ? undefined : JSON.stringify(body),
-    pathParameters: { siteId, zoneId, workerId },
+    pathParameters: { siteId, plantId, zoneId, workerId },
     queryStringParameters: query || {},
     requestContext: {
       authorizer: sub ? { jwt: { claims: { sub } } } : undefined,
@@ -178,6 +184,72 @@ test("GET /site returns only the site scoped to the authenticated manager subjec
   assert.equal(otherOwnSite.body.name, "Other manager plant");
   assert.notEqual(ownSite.body.siteId, otherOwnSite.body.siteId);
   assert.equal((await invoke("GET /site", { sub: null })).status, 401);
+});
+
+test("plant CRUD scopes access to the owner and generates a private short code", async () => {
+  const created = await invoke("POST /plants", { body: siteInput });
+  assert.equal(created.status, 201);
+  assert.match(created.body.plantCode, /^HP-[A-Z0-9]{4}$/);
+  assert.notEqual(created.body.plantCode, managerSub);
+  assert.equal(created.body.ownerId, managerSub);
+  const plantId = created.body.plantId;
+  assert.equal((await invoke("GET /plants/{plantId}", { plantId })).body.name, siteInput.name);
+  assert.equal((await invoke("GET /plants")).body.some((plant) => plant.plantId === plantId), true);
+  const worker = await invoke("POST /plants/{plantId}/workers", {
+    plantId,
+    body: { name: "Scoped worker", zoneId: created.body.zones[0].id, shiftStart: "07:00", shiftEnd: "15:00" },
+  });
+  assert.equal(worker.status, 201);
+  assert.equal((await invoke("GET /plants/{plantId}/workers", { plantId })).body[0].workerId, worker.body.workerId);
+
+  const otherManager = "plant-other-manager";
+  assert.equal((await invoke("GET /plants/{plantId}", { plantId, sub: otherManager })).status, 404);
+  assert.equal((await invoke("PUT /plants/{plantId}", {
+    plantId,
+    sub: otherManager,
+    body: { ...siteInput, name: "Not yours" },
+  })).status, 404);
+  assert.equal((await invoke("DELETE /plants/{plantId}", { plantId, sub: otherManager })).status, 404);
+  assert.equal((await invoke("GET /plants/{plantId}/workers", { plantId, sub: otherManager })).status, 404);
+
+  const updated = await invoke("PUT /plants/{plantId}", {
+    plantId,
+    body: { ...siteInput, name: "Updated plant" },
+  });
+  assert.equal(updated.status, 200);
+  assert.equal(updated.body.name, "Updated plant");
+  assert.deepEqual(await invoke("DELETE /plants/{plantId}", { plantId }), {
+    status: 200,
+    body: { ok: true },
+    headers: updated.headers,
+  });
+  assert.equal((await invoke("GET /plants/{plantId}", { plantId })).status, 404);
+  assert.equal((await invoke("GET /plants/{plantId}/workers", { plantId })).status, 404);
+});
+
+test("legacy single site migrates once into an owned plant and preserves zones", async () => {
+  const ownerId = "legacy-owner";
+  const legacyZone = { id: "old-zone", ...zoneInput };
+  rows.set(`SITE#${ownerId}|SITE`, {
+    zoneId: `SITE#${ownerId}`,
+    ts: "SITE",
+    entityType: "site",
+    siteId: ownerId,
+    name: "Legacy plant",
+    lat: 12.3,
+    lon: 45.6,
+    radiusM: 300,
+    requireLocation: false,
+    zones: [legacyZone],
+  });
+  const migrated = await migrateLegacySite(ownerId);
+  assert.equal(migrated.name, "Legacy plant");
+  assert.equal(migrated.zones[0].id, "old-zone");
+  assert.match(migrated.plantCode, /^HP-[A-Z0-9]{4}$/);
+  const plants = await invoke("GET /plants", { sub: ownerId });
+  assert.equal(plants.body.length, 1);
+  assert.equal(plants.body[0].plantId, migrated.plantId);
+  assert.equal(rows.has(`SITE#${ownerId}|SITE`), true);
 });
 
 test("worker reports enforce geofence and flow into manager counts/reports", async () => {

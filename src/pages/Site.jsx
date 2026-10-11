@@ -1,8 +1,9 @@
 import { useEffect, useState } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate, useParams } from 'react-router-dom';
 import { getHealth, getSite, saveSite } from '../lib/api.js';
 import { buildSitePayload } from '../lib/sitePayload.js';
 import { validateSite } from '../lib/validation.js';
+import { usePlants } from '../lib/PlantContext.jsx';
 
 const INITIAL_SITE = {
   name: '',
@@ -32,6 +33,9 @@ function displayTime(value) {
 }
 
 export default function Site() {
+  const { plantId } = useParams();
+  const navigate = useNavigate();
+  const { refreshPlants, setSelectedPlantId } = usePlants();
   const [site, setSite] = useState(INITIAL_SITE);
   const [loading, setLoading] = useState(true);
   const [connectionStatus, setConnectionStatus] = useState('checking');
@@ -51,7 +55,7 @@ export default function Site() {
     let active = true;
     setLoading(true);
     setLoadError('');
-    getSite()
+    getSite(plantId)
       .then((result) => {
         if (active && result) {
           setSite({ ...INITIAL_SITE, ...result });
@@ -70,7 +74,7 @@ export default function Site() {
     return () => {
       active = false;
     };
-  }, [loadAttempt]);
+  }, [loadAttempt, plantId]);
 
   useEffect(() => {
     if (!dirty) return undefined;
@@ -184,13 +188,18 @@ export default function Site() {
   }
 
   async function persist(deviceLocation) {
-    const result = await saveSite(payload(deviceLocation));
-    const savedSite = await getSite();
+    const result = await saveSite(payload(deviceLocation), plantId);
+    const savedSite = plantId ? await getSite(plantId) : result;
     if (!savedSite) throw new Error('The saved plant could not be reloaded.');
     setSite({ ...INITIAL_SITE, ...savedSite });
     setDirty(false);
     setLocationCheck(deviceLocation ? result.locationCheck || null : null);
     setSuccess(deviceLocation ? 'Plant location check completed.' : 'Plant details saved.');
+    if (!plantId && savedSite.plantId) {
+      setSelectedPlantId(savedSite.plantId);
+      await refreshPlants();
+      navigate(`/app/plants/${encodeURIComponent(savedSite.plantId)}/dashboard`, { replace: true });
+    }
   }
 
   async function saveDetails() {
@@ -213,13 +222,18 @@ export default function Site() {
     setSuccess('');
     try {
       const deviceLocation = await readPosition();
-      const result = await saveSite(payload(deviceLocation));
-      const savedSite = await getSite();
+      const result = await saveSite(payload(deviceLocation), plantId);
+      const savedSite = plantId ? await getSite(plantId) : result;
       if (!savedSite) throw new Error('The saved plant could not be reloaded.');
       setSite({ ...INITIAL_SITE, ...savedSite });
       setDirty(false);
       setLocationCheck(result.locationCheck || null);
       setSuccess(result.locationCheck?.status === 'verified' ? 'Location verified.' : '');
+      if (!plantId && savedSite.plantId) {
+        setSelectedPlantId(savedSite.plantId);
+        await refreshPlants();
+        navigate(`/app/plants/${encodeURIComponent(savedSite.plantId)}/dashboard`, { replace: true });
+      }
     } catch (verifyError) {
       if (verifyError.message) setError(verifyError.message);
     } finally {
@@ -238,7 +252,7 @@ export default function Site() {
     <section className="manager-page">
       <header className="page-heading">
         <div>
-          <h1>Site &amp; location</h1>
+          <h1>{plantId ? 'Site & location' : 'Register a plant'}</h1>
           <p>Set the plant boundary used for worker tap checks.</p>
         </div>
       </header>
@@ -311,7 +325,7 @@ export default function Site() {
           </button>
         </div>
       </div>
-      <p className="next-step"><Link to="/app/zones">Next: set up your zones →</Link></p>
+      {plantId && <p className="next-step"><Link to={`/app/plants/${encodeURIComponent(plantId)}/zones`}>Next: set up your zones →</Link></p>}
     </section>
   );
 }

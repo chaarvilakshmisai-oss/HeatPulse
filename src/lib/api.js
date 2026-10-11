@@ -12,6 +12,9 @@ import { API_BASE_URL, buildApiUrl } from './config.js';
 const DEMO_SITE_ID = 'sample-site';
 const demoSite = {
   siteId: DEMO_SITE_ID,
+  plantId: DEMO_SITE_ID,
+  plantCode: 'HP-DEMO',
+  ownerId: 'demo-manager',
   name: 'Sample Plant',
   lat: 37.7749,
   lon: -122.4194,
@@ -33,17 +36,22 @@ const demoSite = {
   })),
 };
 const demoReports = [];
+const demoPlants = [demoSite];
 const REQUEST_TIMEOUT_MS = 15_000;
 const NETWORK_ERROR_MESSAGE = "Can't reach the server. Check your connection and try again.";
 const SESSION_EXPIRED_MESSAGE = 'Your session expired. Please sign in again.';
 let siteCache;
 let siteCachePromise;
 let hasSiteCache = false;
+const plantCache = new Map();
+const plantPromises = new Map();
 
 export function invalidateSiteCache() {
   siteCache = undefined;
   siteCachePromise = undefined;
   hasSiteCache = false;
+  plantCache.clear();
+  plantPromises.clear();
 }
 
 function distanceBetween(lat1, lon1, lat2, lon2) {
@@ -173,7 +181,8 @@ export async function sendReport(report) {
   return request('/report', { method: 'POST', body: JSON.stringify(report) });
 }
 
-export async function getSite() {
+export async function getSite(plantId) {
+  if (plantId) return getPlant(plantId);
   if (isDemoMode()) return structuredClone(demoSite);
   if (hasSiteCache) return siteCache;
   if (siteCachePromise) return siteCachePromise;
@@ -198,7 +207,77 @@ export async function getSite() {
   return pending;
 }
 
-export async function saveSite(site) {
+export async function getPlants() {
+  if (isDemoMode()) return structuredClone(demoPlants);
+  return request('/plants', {}, true);
+}
+
+export async function getPlant(plantId) {
+  if (!plantId) return null;
+  if (isDemoMode()) return structuredClone(demoPlants.find((plant) => plant.plantId === plantId) || null);
+  if (plantCache.has(plantId)) return plantCache.get(plantId);
+  if (plantPromises.has(plantId)) return plantPromises.get(plantId);
+  const pending = request(`/plants/${encodeURIComponent(plantId)}`, {}, true)
+    .catch((error) => {
+      if (error instanceof ApiError && error.status === 404) return null;
+      throw error;
+    })
+    .then((plant) => {
+      if (plantPromises.get(plantId) === pending) {
+        plantCache.set(plantId, plant);
+        plantPromises.delete(plantId);
+      }
+      return plant;
+    }, (error) => {
+      if (plantPromises.get(plantId) === pending) plantPromises.delete(plantId);
+      throw error;
+    });
+  plantPromises.set(plantId, pending);
+  return pending;
+}
+
+export async function savePlant(plant, plantId) {
+  if (isDemoMode()) {
+    const id = plantId || `demo-plant-${Date.now()}`;
+    const previous = demoPlants.findIndex((item) => item.plantId === id);
+    const saved = {
+      ...plant,
+      siteId: id,
+      plantId: id,
+      plantCode: previous >= 0 ? demoPlants[previous].plantCode : `HP-${Math.random().toString(36).slice(2, 6).toUpperCase()}`,
+      ownerId: 'demo-manager',
+      createdAt: previous >= 0 ? demoPlants[previous].createdAt : new Date().toISOString(),
+    };
+    if (previous >= 0) demoPlants[previous] = saved;
+    else demoPlants.push(saved);
+    invalidateSiteCache();
+    return structuredClone(saved);
+  }
+  const path = plantId
+    ? `/plants/${encodeURIComponent(plantId)}`
+    : '/plants';
+  const result = await request(path, {
+    method: plantId ? 'PUT' : 'POST',
+    body: JSON.stringify(plant),
+  }, true);
+  invalidateSiteCache();
+  return result;
+}
+
+export async function deletePlant(plantId) {
+  if (isDemoMode()) {
+    const index = demoPlants.findIndex((plant) => plant.plantId === plantId);
+    if (index >= 0) demoPlants.splice(index, 1);
+    invalidateSiteCache();
+    return { ok: true };
+  }
+  const result = await request(`/plants/${encodeURIComponent(plantId)}`, { method: 'DELETE' }, true);
+  invalidateSiteCache();
+  return result;
+}
+
+export async function saveSite(site, plantId) {
+  if (plantId) return savePlant(site, plantId);
   if (isDemoMode()) {
     const distanceM = site.deviceLocation
       ? distanceBetween(site.lat, site.lon, site.deviceLocation.lat, site.deviceLocation.lon)
@@ -233,35 +312,40 @@ export async function saveSite(site) {
   return result;
 }
 
-export async function getZones() {
-  if (isDemoMode()) return structuredClone(demoSite.zones);
-  return request('/zones', {}, true);
+export async function getZones(plantId) {
+  if (isDemoMode()) {
+    return structuredClone((demoPlants.find((plant) => plant.plantId === plantId) || demoSite).zones);
+  }
+  return request(plantId ? `/plants/${encodeURIComponent(plantId)}/zones` : '/zones', {}, true);
 }
 
-export async function getReports(limit = 50) {
-  if (isDemoMode()) return structuredClone(demoReports.slice(0, limit));
-  return request(`/reports?limit=${encodeURIComponent(limit)}`, {}, true);
+export async function getReports(limit = 50, plantId) {
+  if (isDemoMode()) return structuredClone(demoReports.filter((report) => !plantId || report.plantId === plantId).slice(0, limit));
+  const prefix = plantId ? `/plants/${encodeURIComponent(plantId)}/reports` : '/reports';
+  return request(`${prefix}?limit=${encodeURIComponent(limit)}`, {}, true);
 }
 
-export async function getWorkers() {
+export async function getWorkers(plantId) {
   if (isDemoMode()) return [];
-  return request('/workers', {}, true);
+  return request(plantId ? `/plants/${encodeURIComponent(plantId)}/workers` : '/workers', {}, true);
 }
 
-export async function saveWorker(worker) {
+export async function saveWorker(worker, plantId) {
   const { workerId, ...body } = worker;
   if (isDemoMode()) throw new ApiError('Worker management requires the configured API.', 501);
+  const prefix = plantId ? `/plants/${encodeURIComponent(plantId)}/workers` : '/workers';
   return request(workerId
-    ? `/workers/${encodeURIComponent(workerId)}`
-    : '/workers', {
+    ? `${prefix}/${encodeURIComponent(workerId)}`
+    : prefix, {
     method: workerId ? 'PUT' : 'POST',
     body: JSON.stringify(body),
   }, true);
 }
 
-export async function deactivateWorker(workerId) {
+export async function deactivateWorker(workerId, plantId) {
   if (isDemoMode()) throw new ApiError('Worker management requires the configured API.', 501);
-  return request(`/workers/${encodeURIComponent(workerId)}`, { method: 'DELETE' }, true);
+  const prefix = plantId ? `/plants/${encodeURIComponent(plantId)}/workers` : '/workers';
+  return request(`${prefix}/${encodeURIComponent(workerId)}`, { method: 'DELETE' }, true);
 }
 
 export async function getWorkerPlan(siteId, zoneId, workerId) {
@@ -279,9 +363,9 @@ export async function recordWorkerBreak(siteId, zoneId, workerId, breakEvent) {
   return request(path, { method: 'POST', body: JSON.stringify(breakEvent) });
 }
 
-export async function getBreakSummary() {
+export async function getBreakSummary(plantId) {
   if (isDemoMode()) return { date: new Date().toISOString().slice(0, 10), workers: [], zones: [] };
-  return request('/breaks', {}, true);
+  return request(plantId ? `/plants/${encodeURIComponent(plantId)}/breaks` : '/breaks', {}, true);
 }
 
 export async function getHealth() {

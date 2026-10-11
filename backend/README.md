@@ -20,6 +20,18 @@ The dev server listens on `http://localhost:3000`, uses the synthetic manager su
 | `GET /health` | Public | Returns `{ "ok": true }` |
 | `GET /public/sites/{siteId}` | Public | Returns the site name, location requirement, and public zone IDs/names |
 | `POST /report` | Public | Records a worker level (1–3); location is checked when required |
+| `GET /plants` | Cognito ID token | Lists plants owned by the signed-in manager; migrates an existing legacy site when needed |
+| `POST /plants` | Cognito ID token | Creates a plant with a generated `plantId` and unique short `plantCode` |
+| `GET /plants/{plantId}` | Cognito ID token | Gets an owned plant; returns 404 for another manager's plant |
+| `PUT /plants/{plantId}` | Cognito ID token | Updates an owned plant and its zones |
+| `DELETE /plants/{plantId}` | Cognito ID token | Deletes an owned plant and its workers |
+| `GET /plants/{plantId}/zones` | Cognito ID token | Returns zones and derived tap counts for an owned plant |
+| `GET /plants/{plantId}/reports?limit=N` | Cognito ID token | Returns reports scoped to an owned plant |
+| `GET /plants/{plantId}/breaks` | Cognito ID token | Returns break counts scoped to an owned plant |
+| `GET /plants/{plantId}/workers` | Cognito ID token | Lists workers assigned to an owned plant |
+| `POST /plants/{plantId}/workers` | Cognito ID token | Creates a worker with a plant-unique ID |
+| `PUT /plants/{plantId}/workers/{workerId}` | Cognito ID token | Updates a worker in an owned plant |
+| `DELETE /plants/{plantId}/workers/{workerId}` | Cognito ID token | Deactivates a worker in an owned plant |
 | `GET /site` | Cognito ID token | Gets the manager's site, or `404 { "error": "No site yet" }` |
 | `PUT /site` | Cognito ID token | Validates and saves site settings and zones |
 | `GET /zones` | Cognito ID token | Returns saved zones and derived tap counts |
@@ -33,7 +45,7 @@ The dev server listens on `http://localhost:3000`, uses the synthetic manager su
 | `GET /public/workers/{siteId}/{workerId}` | Public, throttled | Looks up an active worker by plant code and returns shift/break status |
 | `POST /public/workers/{siteId}/{zoneId}/{workerId}/breaks` | Public, throttled | Records a valid break start/end sequence |
 
-Manager identity and site ID come from the Cognito JWT `sub` claim. The frontend sends the ID token in `Authorization`. Plant shifts use the saved IANA time zone; worker shift fields are recurring 24-hour `HH:mm` times. Break records store `withinRadius` only, not raw coordinates or accuracy. DynamoDB report items expire after seven days.
+Manager ownership comes from the Cognito JWT `sub` claim; the frontend sends the ID token in `Authorization`. New public plant and worker records use generated plant IDs and never use that subject as a worker-facing plant code. Plant shifts use the saved IANA time zone; worker shift fields are recurring 24-hour `HH:mm` times. Break records store `withinRadius` only, not raw coordinates or accuracy. DynamoDB report items expire after seven days.
 
 ## Configure and deploy
 
@@ -43,7 +55,7 @@ After deployment, use the `ApiUrl` output as frontend `VITE_API_URL`, and the sa
 
 ## Data and operational notes
 
-- Sites, workers, reports, and break events share the DynamoDB table, keyed by `zoneId` and `ts`. `WorkerBreaksIndex` supports worker history and `BreaksByPlantDayIndex` supports plant-day reporting.
+- Plants, owner references, plant-code reservations, workers, reports, and break events share the DynamoDB table, keyed by `zoneId` and `ts`. Manager plant records are owner-checked; worker/report/break partitions use `plantId`. `WorkerBreaksIndex` supports worker history and `BreaksByPlantDayIndex` supports plant-day reporting.
 - API Gateway CORS allows `content-type` and `authorization`. Restrict the configured `AllowedOrigin` to the real frontend origin for production.
 - Location is a soft check based on browser-reported coordinates, which can be faked. Exposure scoring is a placeholder and all guidance is advisory.
 - Break interval/duration rules are placeholder values, not medical or legal guidance. Tune them in `backend/src/breaks.js` and `src/lib/breaks.js` together.

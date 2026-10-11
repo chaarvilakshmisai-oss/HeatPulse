@@ -4,7 +4,7 @@ import { buildQrUrl } from './qr.js';
 describe('worker QR URL builder', () => {
   it('builds a tap link for the current origin and encodes both identifiers', () => {
     expect(buildQrUrl('https://plant.example', 'site 1', 'zone/a')).toBe(
-      'https://plant.example/tap?site=site+1&zone=zone%2Fa'
+      'https://plant.example/tap?plantId=site+1&zoneId=zone%2Fa'
     );
   });
 

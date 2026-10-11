@@ -7,6 +7,7 @@ const {
   GetCommand,
   QueryCommand,
   PutCommand,
+  DeleteCommand,
   TransactWriteCommand,
 } = require("@aws-sdk/lib-dynamodb");
 
@@ -25,7 +26,7 @@ const HEADERS = {
 };
 const REPORT_PARTITION_PREFIX = "REPORT#";
 const BREAK_PARTITION_PREFIX = "BREAK#";
-const WORKER_ID_ALPHABET = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ";
+const WORKER_ID_ALPHABET = "23456789ABCDEFGHJKLMNPQRSTUVWXYZ";
 
 function json(statusCode, payload) {
   return { statusCode, headers: HEADERS, body: JSON.stringify(payload) };
@@ -55,6 +56,18 @@ function managerId(event) {
 
 function sitePartition(siteId) {
   return `SITE#${siteId}`;
+}
+
+function ownerPartition(ownerId) {
+  return `OWNER#${ownerId}`;
+}
+
+function ownerPlantKey(ownerId, plantId) {
+  return { zoneId: ownerPartition(ownerId), ts: `PLANT#${plantId}` };
+}
+
+function plantCodeKey(plantCode) {
+  return { zoneId: `PLANTCODE#${plantCode}`, ts: "CODE" };
 }
 
 function reportPartition(siteId, zoneId) {
@@ -146,6 +159,216 @@ async function loadSite(siteId) {
     Key: { zoneId: sitePartition(siteId), ts: "SITE" },
   }));
   return result.Item || null;
+}
+
+async function loadPlant(plantId) {
+  return loadSite(plantId);
+}
+
+async function loadOwnedPlant(ownerId, plantId) {
+  const plant = await loadPlant(plantId);
+  return plant?.ownerId === ownerId ? plant : null;
+}
+
+async function listOwnerPlants(ownerId) {
+  const result = await doc.send(new QueryCommand({
+    TableName: TABLE_NAME,
+    KeyConditionExpression: "zoneId = :owner AND begins_with(#ts, :plantPrefix)",
+    ExpressionAttributeNames: { "#ts": "ts" },
+    ExpressionAttributeValues: {
+      ":owner": ownerPartition(ownerId),
+      ":plantPrefix": "PLANT#",
+    },
+  }));
+  const plants = await Promise.all((result.Items || []).map((reference) => loadPlant(reference.plantId)));
+  return plants.filter((plant) => plant?.ownerId === ownerId).map(publicManagerSite);
+}
+
+async function generatePlantCode(plantId) {
+  for (let attempt = 0; attempt < 30; attempt += 1) {
+    let suffix = "";
+    for (let index = 0; index < 4; index += 1) {
+      suffix += WORKER_ID_ALPHABET[randomInt(WORKER_ID_ALPHABET.length)];
+    }
+    const plantCode = `HP-${suffix}`;
+    try {
+      await doc.send(new PutCommand({
+        TableName: TABLE_NAME,
+        Item: { ...plantCodeKey(plantCode), entityType: "plantCode", plantId },
+        ConditionExpression: "attribute_not_exists(zoneId) AND attribute_not_exists(#ts)",
+        ExpressionAttributeNames: { "#ts": "ts" },
+      }));
+      return plantCode;
+    } catch (error) {
+      if (error.name !== "ConditionalCheckFailedException") throw error;
+    }
+  }
+  throw new Error("Unable to generate a unique plant code");
+}
+
+function makePlant({ plantId, ownerId, plantCode, input, previous, createdAt }) {
+  const previousZones = new Map((previous?.zones || []).map((zone) => [zone.id, zone]));
+  const zones = input.zones.map((zone) => ({
+    ...zone,
+    id: zone.id || randomUUID(),
+    exposure: estimateExposure(zone),
+    tapsToday: previousZones.get(zone.id)?.tapsToday || 0,
+    recentTooHotTaps: previousZones.get(zone.id)?.recentTooHotTaps || 0,
+  }));
+  return {
+    zoneId: sitePartition(plantId),
+    ts: "SITE",
+    entityType: "plant",
+    plantId,
+    siteId: plantId,
+    ownerId,
+    plantCode,
+    name: input.name,
+    lat: input.lat,
+    lon: input.lon,
+    radiusM: input.radiusM,
+    requireLocation: input.requireLocation,
+    timeZone: input.timeZone,
+    zones,
+    locationVerifiedAt: previous?.locationVerifiedAt || null,
+    createdAt: createdAt || new Date().toISOString(),
+  };
+}
+
+async function putPlantRecord(plant) {
+  await doc.send(new PutCommand({ TableName: TABLE_NAME, Item: plant }));
+  await doc.send(new PutCommand({
+    TableName: TABLE_NAME,
+    Item: { ...ownerPlantKey(plant.ownerId, plant.plantId), entityType: "plantOwnerRef", plantId: plant.plantId },
+  }));
+}
+
+async function migrateLegacySite(ownerId) {
+  const legacy = await loadSite(ownerId);
+  if (!legacy || legacy.plantId) return null;
+  const references = await doc.send(new QueryCommand({
+    TableName: TABLE_NAME,
+    KeyConditionExpression: "zoneId = :owner AND begins_with(#ts, :plantPrefix)",
+    ExpressionAttributeNames: { "#ts": "ts" },
+    ExpressionAttributeValues: { ":owner": ownerPartition(ownerId), ":plantPrefix": "PLANT#" },
+  }));
+  if (references.Items?.length) return null;
+
+  const plantId = randomUUID();
+  const plantCode = await generatePlantCode(plantId);
+  const input = {
+    name: legacy.name,
+    lat: legacy.lat,
+    lon: legacy.lon,
+    radiusM: legacy.radiusM,
+    requireLocation: legacy.requireLocation,
+    timeZone: legacy.timeZone || "Asia/Kolkata",
+    zones: legacy.zones || [],
+  };
+  const plant = makePlant({
+    plantId,
+    ownerId,
+    plantCode,
+    input,
+    previous: legacy,
+    createdAt: legacy.createdAt || new Date().toISOString(),
+  });
+  await putPlantRecord(plant);
+  return publicManagerSite(plant);
+}
+
+async function getPlants(event) {
+  const ownerId = managerId(event);
+  if (!ownerId) return json(401, { error: "Unauthorized" });
+  await migrateLegacySite(ownerId);
+  return json(200, await listOwnerPlants(ownerId));
+}
+
+async function createPlant(event) {
+  const ownerId = managerId(event);
+  if (!ownerId) return json(401, { error: "Unauthorized" });
+  const parsed = parseBody(event);
+  if (!parsed.ok) return json(400, { error: parsed.error });
+  const check = validateSite(parsed.value);
+  if (!check.ok) return json(400, { error: check.error });
+  const plantId = randomUUID();
+  const plantCode = await generatePlantCode(plantId);
+  const plant = makePlant({ plantId, ownerId, plantCode, input: check.value });
+  try {
+    await putPlantRecord(plant);
+  } catch (error) {
+    await doc.send(new DeleteCommand({ TableName: TABLE_NAME, Key: plantCodeKey(plantCode) }));
+    throw error;
+  }
+  return json(201, publicManagerSite(plant));
+}
+
+async function getPlant(event) {
+  const ownerId = managerId(event);
+  if (!ownerId) return json(401, { error: "Unauthorized" });
+  const plant = await loadOwnedPlant(ownerId, event.pathParameters?.plantId);
+  return plant ? json(200, publicManagerSite(plant)) : json(404, { error: "Plant not found" });
+}
+
+async function updatePlant(event) {
+  const ownerId = managerId(event);
+  if (!ownerId) return json(401, { error: "Unauthorized" });
+  const plantId = event.pathParameters?.plantId;
+  const previous = await loadOwnedPlant(ownerId, plantId);
+  if (!previous) return json(404, { error: "Plant not found" });
+  const parsed = parseBody(event);
+  if (!parsed.ok) return json(400, { error: parsed.error });
+  const check = validateSite(parsed.value);
+  if (!check.ok) return json(400, { error: check.error });
+  const plant = makePlant({
+    plantId,
+    ownerId,
+    plantCode: previous.plantCode,
+    input: check.value,
+    previous,
+    createdAt: previous.createdAt,
+  });
+  if (previous.lat !== plant.lat || previous.lon !== plant.lon) plant.locationVerifiedAt = null;
+  if (check.value.deviceLocation) {
+    const distanceM = distanceInMetres(plant.lat, plant.lon, check.value.deviceLocation.lat, check.value.deviceLocation.lon);
+    plant.locationVerifiedAt = distanceM <= plant.radiusM ? toIso(new Date()) : null;
+  }
+  await putPlantRecord(plant);
+  return json(200, publicManagerSite(plant));
+}
+
+async function deletePlant(event) {
+  const ownerId = managerId(event);
+  if (!ownerId) return json(401, { error: "Unauthorized" });
+  const plantId = event.pathParameters?.plantId;
+  const plant = await loadOwnedPlant(ownerId, plantId);
+  if (!plant) return json(404, { error: "Plant not found" });
+  const workers = await listSiteWorkers(plantId);
+  await Promise.all(workers.map((worker) => doc.send(new DeleteCommand({
+    TableName: TABLE_NAME,
+    Key: workerItemKey(plantId, worker.workerId),
+  }))));
+  await Promise.all([
+    doc.send(new DeleteCommand({ TableName: TABLE_NAME, Key: { zoneId: sitePartition(plantId), ts: "SITE" } })),
+    doc.send(new DeleteCommand({ TableName: TABLE_NAME, Key: ownerPlantKey(ownerId, plantId) })),
+    doc.send(new DeleteCommand({ TableName: TABLE_NAME, Key: plantCodeKey(plant.plantCode) })),
+  ]);
+  return json(200, { ok: true });
+}
+
+async function withOwnedPlant(event, handler, deactivate = false) {
+  const ownerId = managerId(event);
+  if (!ownerId) return json(401, { error: "Unauthorized" });
+  const plantId = event.pathParameters?.plantId;
+  if (!await loadOwnedPlant(ownerId, plantId)) return json(404, { error: "Plant not found" });
+  const scopedEvent = {
+    ...event,
+    requestContext: {
+      ...event.requestContext,
+      authorizer: { jwt: { claims: { ...event.requestContext?.authorizer?.jwt?.claims, sub: plantId } } },
+    },
+  };
+  return handler(scopedEvent, deactivate);
 }
 
 async function loadReports(siteId, zone, limit, reverse = true) {
@@ -653,6 +876,18 @@ exports.handler = async (event) => {
       return { statusCode: 204, headers: HEADERS, body: "" };
     }
     if (routeKey === "GET /health") return json(200, { ok: true });
+    if (routeKey === "GET /plants") return getPlants(event);
+    if (routeKey === "POST /plants") return createPlant(event);
+    if (routeKey === "GET /plants/{plantId}") return getPlant(event);
+    if (routeKey === "PUT /plants/{plantId}") return updatePlant(event);
+    if (routeKey === "DELETE /plants/{plantId}") return deletePlant(event);
+    if (routeKey === "GET /plants/{plantId}/zones") return withOwnedPlant(event, getZones);
+    if (routeKey === "GET /plants/{plantId}/reports") return withOwnedPlant(event, getReports);
+    if (routeKey === "GET /plants/{plantId}/breaks") return withOwnedPlant(event, getBreakSummary);
+    if (routeKey === "GET /plants/{plantId}/workers") return withOwnedPlant(event, getWorkers);
+    if (routeKey === "POST /plants/{plantId}/workers") return withOwnedPlant(event, createWorker);
+    if (routeKey === "PUT /plants/{plantId}/workers/{workerId}") return withOwnedPlant(event, updateWorker);
+    if (routeKey === "DELETE /plants/{plantId}/workers/{workerId}") return withOwnedPlant(event, updateWorker, true);
     if (routeKey === "GET /public/sites/{siteId}") {
       return getPublicSite(event.pathParameters?.siteId);
     }
@@ -675,3 +910,5 @@ exports.handler = async (event) => {
     return json(500, { error: "Internal server error" });
   }
 };
+
+exports.migrateLegacySite = migrateLegacySite;

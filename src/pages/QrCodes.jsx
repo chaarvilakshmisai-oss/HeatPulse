@@ -1,10 +1,11 @@
 import { useEffect, useState } from 'react';
 import QRCode from 'qrcode';
-import { Link } from 'react-router-dom';
+import { Link, useParams } from 'react-router-dom';
 import { getSite, getZones } from '../lib/api.js';
 import { buildQrUrl } from '../lib/qr.js';
 
 export default function QrCodes() {
+  const { plantId } = useParams();
   const [site, setSite] = useState(null);
   const [zones, setZones] = useState([]);
   const [codes, setCodes] = useState({});
@@ -18,13 +19,13 @@ export default function QrCodes() {
     setError('');
     async function load() {
       try {
-        const [siteResult, zoneResult] = await Promise.all([getSite(), getZones()]);
+        const [siteResult, zoneResult] = await Promise.all([getSite(plantId), getZones(plantId)]);
         if (!active) return;
         setSite(siteResult);
         setZones(zoneResult);
-        if (!siteResult?.siteId) return;
+        if (!siteResult?.plantId) return;
         const entries = await Promise.all(zoneResult.map(async (zone) => {
-          const url = buildQrUrl(window.location.origin, siteResult.siteId, zone.id);
+          const url = buildQrUrl(window.location.origin, siteResult.plantId, zone.id);
           const dataUrl = await QRCode.toDataURL(url, {
             width: 240,
             margin: 2,
@@ -43,7 +44,7 @@ export default function QrCodes() {
     return () => {
       active = false;
     };
-  }, [retryCount]);
+  }, [retryCount, plantId]);
 
   if (loading) return <div className="card page-state" role="status">Loading QR codes…</div>;
   if (error) {
@@ -54,11 +55,11 @@ export default function QrCodes() {
       </div>
     );
   }
-  if (!site?.siteId) {
+  if (!site?.plantId) {
     return (
       <section className="card page-state">
         <p role="alert">Save your site before creating worker QR codes.</p>
-        <Link to="/app/site">Set up your plant</Link>
+        <Link to={`/app/plants/${plantId}/site`}>Set up your plant</Link>
       </section>
     );
   }

@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
+import { useParams } from 'react-router-dom';
 import { getBreakSummary, getReports, getZones } from '../lib/api.js';
 
 function reportRows(result) {
@@ -31,6 +32,7 @@ function isLocationVerified(report) {
 }
 
 export default function Reports() {
+  const { plantId } = useParams();
   const [reports, setReports] = useState([]);
   const [zoneNames, setZoneNames] = useState({});
   const [breakSummary, setBreakSummary] = useState({ workers: [], zones: [] });
@@ -44,7 +46,7 @@ export default function Reports() {
     setRefreshing(true);
     setError('');
     try {
-      const [result, zones, summary] = await Promise.all([getReports(50), getZones(), getBreakSummary()]);
+      const [result, zones, summary] = await Promise.all([getReports(50, plantId), getZones(plantId), getBreakSummary(plantId)]);
       const rows = reportRows(result);
       if (!Array.isArray(zones)) throw new Error('The zones response was not valid.');
       if (!Array.isArray(summary?.workers) || !Array.isArray(summary?.zones)) {
@@ -60,7 +62,7 @@ export default function Reports() {
       setLoading(false);
       setRefreshing(false);
     }
-  }, []);
+  }, [plantId]);
 
   useEffect(() => {
     refresh(true);

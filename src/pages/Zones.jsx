@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { Link, useNavigate, useParams } from 'react-router-dom';
 import { getSite, saveSite } from '../lib/api.js';
 import { estimateExposure } from '../lib/exposure.js';
 import { buildSitePayload } from '../lib/sitePayload.js';
@@ -84,6 +84,7 @@ function ZoneFields({ zone, errors, onChange }) {
 }
 
 export default function Zones() {
+  const { plantId } = useParams();
   const [site, setSite] = useState(null);
   const [zones, setZones] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -101,7 +102,7 @@ export default function Zones() {
     let active = true;
     setLoading(true);
     setLoadError('');
-    getSite()
+    getSite(plantId)
       .then((result) => {
         if (!active) return;
         setSite(result);
@@ -119,7 +120,7 @@ export default function Zones() {
     return () => {
       active = false;
     };
-  }, [loadAttempt]);
+  }, [loadAttempt, plantId]);
 
   useEffect(() => {
     if (!dirty) return undefined;
@@ -195,8 +196,8 @@ export default function Zones() {
         headcount: Number(zone.headcount),
         exposure: estimateExposure(zone),
       })));
-      await saveSite(payload);
-      const savedSite = await getSite();
+      await saveSite(payload, plantId);
+      const savedSite = await getSite(plantId);
       if (!savedSite) throw new Error('The saved plant could not be reloaded.');
       setSite(savedSite);
       const savedZones = prepareZones(savedSite.zones || []);
@@ -204,7 +205,7 @@ export default function Zones() {
       setEditingKey(null);
       setDirty(false);
       setSuccess('Zone changes saved.');
-      if (window.history.state?.usr?.setupRequired) navigate('/app/zones', { replace: true, state: null });
+      if (window.history.state?.usr?.setupRequired) navigate(`/app/plants/${plantId}/zones`, { replace: true, state: null });
     } catch (saveError) {
       setError(saveError.message || 'Unable to save zone changes. Please try again.');
     } finally {
@@ -236,7 +237,7 @@ export default function Zones() {
       <section className="card page-state">
         <p role="alert">{error}</p>
         {loadError && <button type="button" className="secondary-button" onClick={() => setLoadAttempt((attempt) => attempt + 1)}>Retry</button>}
-        <Link to="/app/site">Set up your plant</Link>
+        <Link to="/app/plants/new">Set up your plant</Link>
       </section>
     );
   }

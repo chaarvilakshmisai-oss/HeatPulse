@@ -105,6 +105,12 @@ test("local API keeps the manager site across a backend restart", async (context
   assert.equal(restartedSite.name, "INDUSTRY1");
   assert.equal(restartedSite.zones.length, 1);
   assert.equal(restartedSite.zones[0].name, "Furnace");
+  const migratedPlants = await fetch(`${baseUrl}/plants`);
+  assert.equal(migratedPlants.status, 200);
+  const plants = await migratedPlants.json();
+  assert.equal(plants.length, 1);
+  assert.equal(plants[0].name, "INDUSTRY1");
+  assert.equal(plants[0].zones[0].name, "Furnace");
 });
 
 test("local API rate limits public worker reports by source IP", async (context) => {
@@ -120,4 +126,57 @@ test("local API rate limits public worker reports by source IP", async (context)
     body: JSON.stringify({}),
   })));
   assert.equal(responses.filter((response) => response.status === 429).length, 1);
+});
+
+test("local API persists multiple plants and plant-scoped workers across restart", async (context) => {
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), "heatpulse-dev-plants-"));
+  context.after(() => fs.rmSync(directory, { recursive: true, force: true }));
+  const port = await getAvailablePort();
+  const baseUrl = `http://127.0.0.1:${port}`;
+  const childData = path.join(directory, "plants.json");
+  let child = await startServer(port, childData);
+  context.after(async () => stopServer(child));
+
+  const payload = {
+    name: "North Works",
+    lat: 12.3,
+    lon: 45.6,
+    radiusM: 300,
+    requireLocation: false,
+    timeZone: "UTC",
+    zones: [{
+      id: "zone-1",
+      name: "Furnace",
+      kind: "process",
+      roof: "metal",
+      ventilation: "poor",
+      headcount: 12,
+    }],
+  };
+  const createdResponse = await fetch(`${baseUrl}/plants`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+  assert.equal(createdResponse.status, 201);
+  const created = await createdResponse.json();
+  assert.match(created.plantCode, /^HP-[A-Z0-9]{4}$/);
+  const workerResponse = await fetch(`${baseUrl}/plants/${created.plantId}/workers`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ name: "Demo Worker", zoneId: "zone-1", shiftStart: "07:00", shiftEnd: "15:00" }),
+  });
+  assert.equal(workerResponse.status, 201);
+  const worker = await workerResponse.json();
+
+  await stopServer(child);
+  child = await startServer(port, childData);
+  const [plantsResponse, workersResponse] = await Promise.all([
+    fetch(`${baseUrl}/plants`),
+    fetch(`${baseUrl}/plants/${created.plantId}/workers`),
+  ]);
+  assert.equal(plantsResponse.status, 200);
+  assert.equal(workersResponse.status, 200);
+  assert.equal((await plantsResponse.json()).map((plant) => plant.plantId).includes(created.plantId), true);
+  assert.equal((await workersResponse.json()).some((item) => item.workerId === worker.workerId), true);
 });

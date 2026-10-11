@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useParams } from 'react-router-dom';
 import ActFirst from '../components/ActFirst.jsx';
 import DayBars from '../components/DayBars.jsx';
 import Header from '../components/Header.jsx';
@@ -11,6 +11,7 @@ import { isDemoMode } from '../lib/auth.js';
 import { summarizeDashboard } from '../lib/dashboard.js';
 
 export default function Dashboard() {
+  const { plantId } = useParams();
   const [zones, setZones] = useState([]);
   const [hourIndex, setHourIndex] = useState(7);
   const [isPlaying, setIsPlaying] = useState(false);
@@ -26,7 +27,7 @@ export default function Dashboard() {
     setRefreshing(true);
     setError('');
     try {
-      const result = await getZones();
+      const result = await getZones(plantId);
       if (!Array.isArray(result)) throw new Error('The zones response was not valid.');
       setZones(result);
       setHasLoadedData(true);
@@ -37,7 +38,7 @@ export default function Dashboard() {
       setLoading(false);
       setRefreshing(false);
     }
-  }, []);
+  }, [plantId]);
 
   useEffect(() => {
     refresh(true);
@@ -93,7 +94,7 @@ export default function Dashboard() {
           <section className="card empty-state">
             <h1>No zones yet</h1>
             <p>Add work areas to see their heat-risk guidance.</p>
-            <Link to="/app/zones">Set up zones</Link>
+            <Link to={`/app/plants/${plantId}/zones`}>Set up zones</Link>
           </section>
         ) : (
         <>

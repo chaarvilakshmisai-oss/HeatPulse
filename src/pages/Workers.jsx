@@ -1,10 +1,12 @@
 import { useEffect, useState } from 'react';
+import { useParams } from 'react-router-dom';
 import { getSite, getWorkers, getZones, saveWorker, deactivateWorker } from '../lib/api.js';
 import { validateWorker } from '../lib/validation.js';
 
 const EMPTY_WORKER = { name: '', zoneId: '', shiftStart: '07:00', shiftEnd: '15:00', active: true };
 
 export default function Workers() {
+  const { plantId } = useParams();
   const [site, setSite] = useState(null);
   const [zones, setZones] = useState([]);
   const [workers, setWorkers] = useState([]);
@@ -19,7 +21,7 @@ export default function Workers() {
   const [loadAttempt, setLoadAttempt] = useState(0);
 
   async function refresh() {
-    const [siteResult, zoneResult, workerResult] = await Promise.all([getSite(), getZones(), getWorkers()]);
+    const [siteResult, zoneResult, workerResult] = await Promise.all([getSite(plantId), getZones(plantId), getWorkers(plantId)]);
     setSite(siteResult);
     setZones(zoneResult);
     setWorkers(workerResult);
@@ -32,7 +34,7 @@ export default function Workers() {
     let active = true;
     setLoading(true);
     setLoadError('');
-    Promise.all([getSite(), getZones(), getWorkers()])
+    Promise.all([getSite(plantId), getZones(plantId), getWorkers(plantId)])
       .then(([siteResult, zoneResult, workerResult]) => {
         if (!active) return;
         setSite(siteResult);
@@ -52,7 +54,7 @@ export default function Workers() {
     return () => {
       active = false;
     };
-  }, [loadAttempt]);
+  }, [loadAttempt, plantId]);
 
   function edit(worker) {
     setEditingId(worker.workerId);
@@ -86,7 +88,7 @@ export default function Workers() {
     }
     setSaving(true);
     try {
-      const saved = await saveWorker({ ...form, ...(editingId ? { workerId: editingId } : {}) });
+      const saved = await saveWorker({ ...form, ...(editingId ? { workerId: editingId } : {}) }, plantId);
       await refresh();
       setSuccess(editingId ? 'Worker details updated.' : `Worker added. ID: ${saved.workerId}`);
       reset();
@@ -102,7 +104,7 @@ export default function Workers() {
     setError('');
     setSuccess('');
     try {
-      await deactivateWorker(worker.workerId);
+      await deactivateWorker(worker.workerId, plantId);
       await refresh();
       if (editingId === worker.workerId) reset();
       setSuccess(`${worker.name} was deactivated.`);

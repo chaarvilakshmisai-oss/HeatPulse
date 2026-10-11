@@ -1,7 +1,8 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
-import { BrowserRouter as Router, Link, Navigate, Outlet, Route, Routes, useLocation, useNavigate } from 'react-router-dom';
+import { BrowserRouter as Router, Link, Navigate, Outlet, Route, Routes, useLocation, useNavigate, useParams } from 'react-router-dom';
 import { getCurrentUser, isDemoMode, signOut } from './lib/auth.js';
-import { getSite, invalidateSiteCache } from './lib/api.js';
+import { getPlant, invalidateSiteCache } from './lib/api.js';
+import { PlantProvider, usePlants } from './lib/PlantContext.jsx';
 import Dashboard from './pages/Dashboard.jsx';
 import Login from './pages/Login.jsx';
 import Tap from './pages/Tap.jsx';
@@ -73,7 +74,11 @@ function ProtectedRoute() {
   if (decision.status === 'redirect') {
     return <Navigate to="/login" replace state={{ from: decision.from }} />;
   }
-  return <AppShell user={user}><Outlet /></AppShell>;
+  return (
+    <PlantProvider>
+      <AppShell user={user}><Outlet /></AppShell>
+    </PlantProvider>
+  );
 }
 
 function ManagerRoutes() {
@@ -88,6 +93,7 @@ function ManagerRoutes() {
       '/worker-login': ['Worker login', 'View your HeatPulse shift and break plan.'],
       '/tap': ['Worker check-in', 'Send a worker heat check-in with HeatPulse.'],
       '/app/home': ['Your plants', 'View and manage your HeatPulse plants.'],
+      '/app/plants/new': ['Register a plant', 'Register a HeatPulse plant.'],
       '/app/dashboard': ['Dashboard', 'Review heat guidance and worker reports.'],
       '/app/site': ['Site & location', 'Set your HeatPulse plant name and location.'],
       '/app/zones': ['Zones', 'Manage work areas and their conditions.'],
@@ -95,7 +101,10 @@ function ManagerRoutes() {
       '/app/reports': ['Reports', 'Review worker heat reports and breaks.'],
       '/app/workers': ['Workers', 'Manage worker IDs and shifts.'],
     };
-    const [page, description] = pages[location.pathname] || ['Page not found', 'This HeatPulse page could not be found.'];
+    const plantPage = location.pathname.match(/^\/app\/plants\/[^/]+\/(dashboard|zones|site|qr|reports|workers)$/)?.[1];
+    const [page, description] = pages[location.pathname]
+      || (plantPage ? pages[`/app/${plantPage}`] : null)
+      || ['Page not found', 'This HeatPulse page could not be found.'];
     document.title = location.pathname === '/' ? 'HeatPulse' : `${page} - HeatPulse`;
     let meta = document.querySelector('meta[name="description"]');
     if (!meta) {
@@ -130,14 +139,22 @@ function ManagerRoutes() {
       <Route path="/tap" element={<Tap />} />
       <Route path="/app" element={<ProtectedRoute />}>
         <Route path="home" element={<ManagerHome />} />
-        <Route element={<SiteRequired />}>
-          <Route path="site" element={<Site />} />
+        <Route path="plants" element={<Navigate to="/app/home" replace />} />
+        <Route path="plants/new" element={<Site />} />
+        <Route path="plants/:plantId" element={<PlantRequired />}>
           <Route path="dashboard" element={<Dashboard />} />
           <Route path="zones" element={<Zones />} />
+          <Route path="site" element={<Site />} />
           <Route path="qr" element={<QrCodes />} />
           <Route path="reports" element={<Reports />} />
           <Route path="workers" element={<Workers />} />
         </Route>
+        <Route path="dashboard" element={<LegacyPlantRedirect />} />
+        <Route path="zones" element={<LegacyPlantRedirect />} />
+        <Route path="site" element={<LegacyPlantRedirect />} />
+        <Route path="qr" element={<LegacyPlantRedirect />} />
+        <Route path="reports" element={<LegacyPlantRedirect />} />
+        <Route path="workers" element={<LegacyPlantRedirect />} />
         <Route path="*" element={<AppNotFound />} />
       </Route>
       <Route path="*" element={<Navigate to={UNKNOWN_ROUTE} replace />} />
@@ -155,10 +172,21 @@ function AppNotFound() {
   );
 }
 
-function SiteRequired() {
+function LegacyPlantRedirect() {
+  const location = useLocation();
+  const { selectedPlantId, status } = usePlants();
+  const page = location.pathname.split('/').filter(Boolean).pop();
+  if (status === 'loading') return <div className="route-loading" role="status">Loading your plants…</div>;
+  return <Navigate to={selectedPlantId ? `/app/plants/${selectedPlantId}/${page}` : '/app/home'} replace />;
+}
+
+function PlantRequired() {
   const location = useLocation();
   const navigate = useNavigate();
+  const { plantId } = useParams();
+  const { setSelectedPlantId } = usePlants();
   const [status, setStatus] = useState('loading');
+  const [loadedPlantId, setLoadedPlantId] = useState('');
   const [error, setError] = useState('');
   const [retryCount, setRetryCount] = useState(0);
 
@@ -172,12 +200,14 @@ function SiteRequired() {
 
     async function loadPlant() {
       try {
-        const site = await getSite();
+        const site = await getPlant(plantId);
         if (!active) return;
         if (!site) {
           navigate('/app/home', { replace: true });
           return;
         }
+        setSelectedPlantId(plantId);
+        setLoadedPlantId(plantId);
         setError('');
         setStatus('ready');
       } catch (requestError) {
@@ -186,16 +216,16 @@ function SiteRequired() {
         setStatus('error');
       }
     }
-  }, [location.pathname, navigate, retryCount]);
+  }, [location.pathname, navigate, plantId, retryCount, setSelectedPlantId]);
 
-  if (status === 'loading') return <div className="route-loading" role="status">Loading your plant…</div>;
+  if (status === 'loading' || loadedPlantId !== plantId && status !== 'error') return <div className="route-loading" role="status">Loading plant…</div>;
   if (status === 'error') return (
     <div className="route-loading">
-      <p role="alert">{error}</p>
+      <p role="alert">Unable to load this plant: {error}</p>
       <button type="button" className="secondary-button" onClick={() => setRetryCount((count) => count + 1)}>Retry</button>
     </div>
   );
-  return <Outlet />;
+  return loadedPlantId === plantId ? <Outlet /> : <div className="route-loading" role="status">Loading plant…</div>;
 }
 
 export default function App() {

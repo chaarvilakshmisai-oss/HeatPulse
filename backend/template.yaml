@@ -116,6 +116,102 @@ Resources:
                 - dynamodb:TransactWriteItems
               Resource: !GetAtt ReportsTable.Arn
       Events:
+        Plants:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref HttpApi
+            Path: /plants
+            Method: GET
+            Auth:
+              Authorizer: CognitoJwtAuthorizer
+        CreatePlant:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref HttpApi
+            Path: /plants
+            Method: POST
+            Auth:
+              Authorizer: CognitoJwtAuthorizer
+        Plant:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref HttpApi
+            Path: /plants/{plantId}
+            Method: GET
+            Auth:
+              Authorizer: CognitoJwtAuthorizer
+        UpdatePlant:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref HttpApi
+            Path: /plants/{plantId}
+            Method: PUT
+            Auth:
+              Authorizer: CognitoJwtAuthorizer
+        DeletePlant:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref HttpApi
+            Path: /plants/{plantId}
+            Method: DELETE
+            Auth:
+              Authorizer: CognitoJwtAuthorizer
+        PlantZones:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref HttpApi
+            Path: /plants/{plantId}/zones
+            Method: GET
+            Auth:
+              Authorizer: CognitoJwtAuthorizer
+        PlantReports:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref HttpApi
+            Path: /plants/{plantId}/reports
+            Method: GET
+            Auth:
+              Authorizer: CognitoJwtAuthorizer
+        PlantBreaks:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref HttpApi
+            Path: /plants/{plantId}/breaks
+            Method: GET
+            Auth:
+              Authorizer: CognitoJwtAuthorizer
+        PlantWorkers:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref HttpApi
+            Path: /plants/{plantId}/workers
+            Method: GET
+            Auth:
+              Authorizer: CognitoJwtAuthorizer
+        CreatePlantWorker:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref HttpApi
+            Path: /plants/{plantId}/workers
+            Method: POST
+            Auth:
+              Authorizer: CognitoJwtAuthorizer
+        UpdatePlantWorker:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref HttpApi
+            Path: /plants/{plantId}/workers/{workerId}
+            Method: PUT
+            Auth:
+              Authorizer: CognitoJwtAuthorizer
+        DeactivatePlantWorker:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref HttpApi
+            Path: /plants/{plantId}/workers/{workerId}
+            Method: DELETE
+            Auth:
+              Authorizer: CognitoJwtAuthorizer
         Health:
           Type: HttpApi
           Properties:

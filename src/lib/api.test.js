@@ -21,6 +21,8 @@ import {
   getPublicSite,
   getReports,
   getSite,
+  getPlants,
+  getPlant,
   invalidateSiteCache,
   getBreakSummary,
   getWorkerPlan,
@@ -28,8 +30,10 @@ import {
   getWorkers,
   getZones,
   deactivateWorker,
+  deletePlant,
   recordWorkerBreak,
   saveSite,
+  savePlant,
   saveWorker,
   sendReport,
 } from './api.js';
@@ -149,75 +153,73 @@ describe('frontend API contract', () => {
     expect(fetch).toHaveBeenCalledTimes(4);
   });
 
-  it('reports a login-flow plant request status and whether an ID token was attached', async () => {
-    const site = { siteId: 'local-manager', name: 'Plant', zones: [] };
+  it('routes successful login to home without loading a plant first', async () => {
     auth.signIn.mockResolvedValue({ email: 'manager@example.com' });
-    auth.getIdToken.mockResolvedValue('mock-id-token');
-    auth.isManagerLoginFlowActive.mockReturnValue(true);
-    fetch.mockResolvedValueOnce(jsonResponse(site));
     const navigate = vi.fn();
-
     await completeManagerSignIn(
       () => auth.signIn('manager@example.com', 'password'),
-      getSite,
       navigate,
     );
-
-    const authorization = lastRequest().headers.get('Authorization');
-    const requestStatus = fetch.mock.results[0].value.then((response) => response.status);
-    await expect(requestStatus).resolves.toBe(200);
-    expect(authorization).toBeTruthy();
-    expect(auth.getIdToken).toHaveBeenCalledOnce();
-    expect(navigate).toHaveBeenCalledWith('/app/dashboard', { replace: true });
+    expect(fetch).not.toHaveBeenCalled();
+    expect(navigate).toHaveBeenCalledWith('/app/home', { replace: true });
   });
 
-  it('loads no site, saves one, then reloads the manager site through the login flow', async () => {
-    const site = {
-      siteId: 'local-manager',
-      name: 'INDUSTRY1',
-      lat: 37.7749,
-      lon: -122.4194,
-      radiusM: 300,
-      requireLocation: false,
-      timeZone: 'UTC',
-      zones: [{ id: 'zone-1', name: 'Furnace' }],
-    };
-    const responses = [
-      jsonResponse({ error: 'No site yet' }, 404),
-      jsonResponse({ site, locationCheck: null }, 200),
-      jsonResponse(site, 200),
-    ];
-    const statuses = [];
-    fetch.mockImplementation(async () => {
-      const response = responses.shift();
-      statuses.push(response.status);
-      return response;
-    });
-    auth.isManagerLoginFlowActive.mockReturnValue(true);
+  it('lists plants and caches a plant lookup for a navigation', async () => {
+    const plants = [{ plantId: 'plant-1', plantCode: 'HP-4K7Q', name: 'Plant One' }];
+    fetch.mockResolvedValueOnce(jsonResponse(plants));
+    await expect(getPlants()).resolves.toEqual(plants);
+    expectManagerRequest({ url: '/plants' });
+
+    fetch.mockResolvedValueOnce(jsonResponse(plants[0]));
+    await expect(getPlant('plant-1')).resolves.toEqual(plants[0]);
+    await expect(getPlant('plant-1')).resolves.toEqual(plants[0]);
+    expect(fetch).toHaveBeenCalledTimes(2);
+    expectManagerRequest({ url: '/plants/plant-1' });
+  });
+
+  it('maps only an unknown plant lookup to null and allows retry after errors', async () => {
+    fetch
+      .mockResolvedValueOnce(jsonResponse({ error: 'Plant not found' }, 404))
+      .mockResolvedValueOnce(jsonResponse({ error: 'Service unavailable' }, 503))
+      .mockResolvedValueOnce(jsonResponse({ plantId: 'plant-1', name: 'Plant One' }));
+    await expect(getPlant('plant-404')).resolves.toBeNull();
+    await expect(getPlant('plant-503')).rejects.toMatchObject({ status: 503 });
+    await expect(getPlant('plant-503')).resolves.toMatchObject({ plantId: 'plant-1' });
+    expect(fetch).toHaveBeenCalledTimes(3);
+  });
+
+  it('loads zones, reports, workers and breaks scoped to a plant', async () => {
+    fetch
+      .mockResolvedValueOnce(jsonResponse([]))
+      .mockResolvedValueOnce(jsonResponse([]))
+      .mockResolvedValueOnce(jsonResponse([]))
+      .mockResolvedValueOnce(jsonResponse({ workers: [], zones: [] }));
+    await expect(getZones('plant-1')).resolves.toEqual([]);
+    expectManagerRequest({ url: '/plants/plant-1/zones' });
+    await expect(getReports(10, 'plant-1')).resolves.toEqual([]);
+    expectManagerRequest({ url: '/plants/plant-1/reports?limit=10' });
+    await expect(getWorkers('plant-1')).resolves.toEqual([]);
+    expectManagerRequest({ url: '/plants/plant-1/workers' });
+    await expect(getBreakSummary('plant-1')).resolves.toEqual({ workers: [], zones: [] });
+    expectManagerRequest({ url: '/plants/plant-1/breaks' });
+  });
+
+  it('saves and deletes plants through owner-scoped routes', async () => {
+    const input = { name: 'Plant Two', lat: 12, lon: 34, radiusM: 300, requireLocation: false, zones: [] };
+    const created = { ...input, plantId: 'plant-2', plantCode: 'HP-9XYZ' };
+    fetch.mockResolvedValueOnce(jsonResponse(created, 201));
+    await expect(savePlant(input)).resolves.toEqual(created);
+    expectManagerRequest({ url: '/plants', method: 'POST', body: input });
+
+    fetch.mockResolvedValueOnce(jsonResponse({ ok: true }));
+    await expect(deletePlant('plant-2')).resolves.toEqual({ ok: true });
+    expectManagerRequest({ url: '/plants/plant-2', method: 'DELETE' });
+  });
+
+  it('keeps login navigation independent of whether a manager has plants', async () => {
     const navigate = vi.fn();
-    let noSite;
-
-    await completeManagerSignIn(
-      () => auth.signIn('manager@example.com', 'password'),
-      async () => {
-        noSite = await getSite();
-        return noSite;
-      },
-      navigate,
-    );
-    await saveSite(site);
-    const reloadedSite = await getSite();
-
-    expect(statuses).toEqual([404, 200, 200]);
-    expect(noSite).toBeNull();
-    expect(reloadedSite).toEqual(site);
-    expect(navigate).toHaveBeenCalledWith('/app/site', {
-      replace: true,
-      state: { setupRequired: true },
-    });
-    expect(fetch.mock.calls.every(([, options]) => (
-      new Headers(options.headers).has('Authorization')
-    ))).toBe(true);
+    await completeManagerSignIn(() => auth.signIn('manager@example.com', 'password'), navigate);
+    expect(navigate).toHaveBeenCalledWith('/app/home', { replace: true });
   });
 
   it('shows the actual 401 during login without dispatching an expired-session event', async () => {

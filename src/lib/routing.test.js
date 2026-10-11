@@ -71,11 +71,12 @@ describe('public routes and manager home', () => {
 
   it('keeps only manager home outside the plant-required guard', () => {
     const appSource = readFileSync(new URL('../App.jsx', import.meta.url), 'utf8');
-    const protectedSiteRoute = appSource.indexOf('<Route path="site" element={<Site />} />');
-    const siteRequiredGuard = appSource.indexOf('<Route element={<SiteRequired />}>');
-
-    expect(protectedSiteRoute).toBeGreaterThan(-1);
-    expect(protectedSiteRoute).toBeGreaterThan(siteRequiredGuard);
+    expect(appSource).toContain('<Route path="home" element={<ManagerHome />} />');
+    expect(appSource).toContain('<Route path="plants/new" element={<Site />} />');
+    expect(appSource).toContain('<Route path="plants/:plantId" element={<PlantRequired />}>');
+    expect(appSource).toContain('<Route path="site" element={<Site />} />');
+    expect(appSource).toContain('const site = await getPlant(plantId)');
+    expect(appSource).toContain("navigate('/app/home', { replace: true })");
   });
 
   it('provides per-route metadata and an app-local not-found page', () => {
@@ -116,21 +117,22 @@ describe('public routes and manager home', () => {
       null,
       createElement(ManagerHomeContent, {
         status: 'ready',
-        site: { name: 'North Plant', lat: 12.3, lon: 45.6, radiusM: 300, zones: [{ id: 'z1' }, { id: 'z2' }] },
+        plants: [{ plantId: 'p1', name: 'North Plant', plantCode: 'HP-4K7Q', lat: 12.3, lon: 45.6, radiusM: 300 }],
+        summaries: [{ plantId: 'p1', zones: [{ exposure: 0.8 }, { exposure: 0.7 }], workers: [] }],
       })
     ));
     const notRegistered = renderToString(createElement(
       MemoryRouter,
       null,
-      createElement(ManagerHomeContent, { status: 'ready', site: null })
+      createElement(ManagerHomeContent, { status: 'ready', plants: [], summaries: [] })
     ));
     expect(registered).toContain('North Plant');
     expect(registered).toContain('12.3');
     expect(registered).toContain('45.6');
-    expect(registered).toContain('2');
-    expect(registered).toContain('zones');
-    expect(notRegistered).toContain('No plant registered yet');
-    expect(notRegistered).toContain('Register your plant');
+    expect(registered).toContain('Total zones');
+    expect(registered).toContain('HP-4K7Q');
+    expect(notRegistered).toContain('No plants registered yet');
+    expect(notRegistered).toContain('Register your first plant');
     expect(ManagerHome).toBeTypeOf('function');
   });
 });
