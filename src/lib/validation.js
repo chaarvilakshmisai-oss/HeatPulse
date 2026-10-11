@@ -57,5 +57,8 @@ export function validateWorker(worker) {
   if (!/^(?:[01]\d|2[0-3]):[0-5]\d$/.test(worker.shiftStart || '')) errors.shiftStart = 'Enter a valid shift start time.';
   if (!/^(?:[01]\d|2[0-3]):[0-5]\d$/.test(worker.shiftEnd || '')) errors.shiftEnd = 'Enter a valid shift end time.';
   if (worker.shiftStart && worker.shiftStart === worker.shiftEnd) errors.shiftEnd = 'Shift start and end must differ.';
+  if (worker.smsConsent && !/^\+?[1-9]\d{7,14}$/.test(worker.phone?.trim() || '')) {
+    errors.phone = 'Enter a valid international phone number when SMS consent is given.';
+  }
   return errors;
 }

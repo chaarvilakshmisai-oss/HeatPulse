@@ -1,8 +1,9 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { deletePlant, findWorkerPlant, getWorkers, getZones } from '../lib/api.js';
+import { deletePlant, findWorkerPlant, getPlantAlerts, getWorkers, getZones } from '../lib/api.js';
 import { scoreZone } from '../lib/scoring.js';
 import { usePlants } from '../lib/PlantContext.jsx';
+import { activePlantAlerts } from '../lib/alertState.js';
 
 function riskLabel(zones) {
   if (!zones.length) return 'No zones yet';
@@ -47,7 +48,7 @@ export function ManagerHomeContent({ status, plants, summaries, error, onRetry, 
       </div>
       <ul className="manager-plant-grid" aria-label="Your plants">
         {plants.map((plant) => {
-          const summary = summaries.find((item) => item.plantId === plant.plantId) || { zones: [], workers: [] };
+          const summary = summaries.find((item) => item.plantId === plant.plantId) || { zones: [], workers: [], activeAlertCount: 0 };
           const location = `${Number(plant.lat).toFixed(4)}, ${Number(plant.lon).toFixed(4)} · ${plant.radiusM} m radius`;
           const base = `/app/plants/${encodeURIComponent(plant.plantId)}`;
           return (
@@ -59,10 +60,12 @@ export function ManagerHomeContent({ status, plants, summaries, error, onRetry, 
               <p className="plant-code">Plant code: <code>{plant.plantCode}</code></p>
               <p>{location}</p>
               <p>{summary.zones.length} {summary.zones.length === 1 ? 'zone' : 'zones'} · {summary.workers.length} {summary.workers.length === 1 ? 'worker' : 'workers'}</p>
+              <p>{summary.activeAlertCount} active {summary.activeAlertCount === 1 ? 'alert' : 'alerts'}</p>
               <div className="plant-card-actions">
                 <Link className="primary-button" to={`${base}/dashboard`} onClick={() => onOpenPlant(plant.plantId)}>Open dashboard</Link>
                 <Link className="secondary-button" to={`${base}/zones`} onClick={() => onOpenPlant(plant.plantId)}>Zones</Link>
                 <Link className="secondary-button" to={`${base}/workers`} onClick={() => onOpenPlant(plant.plantId)}>Workers</Link>
+                <Link className="secondary-button" to={`${base}/alerts`} onClick={() => onOpenPlant(plant.plantId)}>Alerts</Link>
                 <Link className="secondary-button" to={`${base}/site`} onClick={() => onOpenPlant(plant.plantId)}>Edit plant</Link>
                 <button type="button" className="secondary-button" onClick={async () => {
                   try {
@@ -120,11 +123,12 @@ export default function ManagerHome() {
     setError('');
     try {
       const details = await Promise.all(plants.map(async (plant) => {
-        const [zones, workers] = await Promise.all([
+        const [zones, workers, alerts] = await Promise.all([
           getZones(plant.plantId),
           getWorkers(plant.plantId),
+          getPlantAlerts(plant.plantId),
         ]);
-        return { plantId: plant.plantId, zones, workers };
+        return { plantId: plant.plantId, zones, workers, activeAlertCount: activePlantAlerts(alerts).length };
       }));
       setSummaries(details);
       setStatus('ready');

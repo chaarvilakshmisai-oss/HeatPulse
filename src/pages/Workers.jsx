@@ -3,7 +3,15 @@ import { useParams } from 'react-router-dom';
 import { findWorkerPlant, getSite, getWorkers, getZones, saveWorker, deactivateWorker } from '../lib/api.js';
 import { validateWorker } from '../lib/validation.js';
 
-const EMPTY_WORKER = { name: '', zoneId: '', shiftStart: '07:00', shiftEnd: '15:00', active: true };
+const EMPTY_WORKER = {
+  name: '',
+  zoneId: '',
+  shiftStart: '07:00',
+  shiftEnd: '15:00',
+  active: true,
+  phone: '',
+  smsConsent: false,
+};
 
 export default function Workers() {
   const { plantId } = useParams();
@@ -68,6 +76,8 @@ export default function Workers() {
       shiftStart: worker.shiftStart,
       shiftEnd: worker.shiftEnd,
       active: worker.active,
+      phone: worker.phone || '',
+      smsConsent: worker.smsConsent === true,
     });
     setErrors({});
     setError('');
@@ -209,7 +219,35 @@ export default function Workers() {
             <input type="time" value={form.shiftEnd} onChange={(event) => setForm({ ...form, shiftEnd: event.target.value })} />
             {errors.shiftEnd && <span className="field-error">{errors.shiftEnd}</span>}
           </label>
+          <label>
+            Phone (optional)
+            <input
+              type="tel"
+              inputMode="tel"
+              autoComplete="tel"
+              placeholder="+14155552671"
+              value={form.phone}
+              onChange={(event) => setForm({ ...form, phone: event.target.value })}
+              disabled={!form.smsConsent}
+            />
+            {errors.phone && <span className="field-error">{errors.phone}</span>}
+          </label>
         </div>
+        <label className="toggle-row">
+          <input
+            type="checkbox"
+            checked={form.smsConsent}
+            onChange={(event) => setForm({
+              ...form,
+              smsConsent: event.target.checked,
+              phone: event.target.checked ? form.phone : '',
+            })}
+          />
+          <span>
+            <strong>SMS consent</strong>
+            <small>Only check this if the worker has agreed to receive safety text messages. The phone number is stored only with consent; SMS alerts are optional and default off.</small>
+          </span>
+        </label>
         {editingId && (
           <label className="toggle-row">
             <input type="checkbox" checked={form.active} onChange={(event) => setForm({ ...form, active: event.target.checked })} />

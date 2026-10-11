@@ -37,6 +37,8 @@ const demoSite = {
 };
 const demoReports = [];
 const demoPlants = [demoSite];
+const demoAlertSettings = new Map();
+const demoAlerts = new Map();
 const REQUEST_TIMEOUT_MS = 15_000;
 const NETWORK_ERROR_MESSAGE = "Can't reach the server. Check your connection and try again.";
 const SESSION_EXPIRED_MESSAGE = 'Your session expired. Please sign in again.';
@@ -331,10 +333,28 @@ export async function getWorkers(plantId) {
 }
 
 export async function getAlertSettings(plantId) {
+  if (isDemoMode()) {
+    const stored = demoAlertSettings.get(plantId);
+    return structuredClone(stored || {
+      plantId,
+      enabled: false,
+      thresholds: { watch: 40, high: 60, critical: 80 },
+      cooldownMinutes: 30,
+      escalateAfterMinutes: 20,
+      managerRecipients: [],
+      workerAlertsEnabled: false,
+      smsEnabled: false,
+    });
+  }
   return request(`/plants/${encodeURIComponent(plantId)}/alert-settings`, {}, true);
 }
 
 export async function saveAlertSettings(plantId, settings) {
+  if (isDemoMode()) {
+    const saved = { ...structuredClone(settings), plantId };
+    demoAlertSettings.set(plantId, saved);
+    return structuredClone(saved);
+  }
   return request(`/plants/${encodeURIComponent(plantId)}/alert-settings`, {
     method: 'PUT',
     body: JSON.stringify(settings),
@@ -342,10 +362,33 @@ export async function saveAlertSettings(plantId, settings) {
 }
 
 export async function getPlantAlerts(plantId) {
+  if (isDemoMode()) return structuredClone(demoAlerts.get(plantId) || []);
   return request(`/plants/${encodeURIComponent(plantId)}/alerts`, {}, true);
 }
 
 export async function sendTestAlert(plantId, level, zoneId) {
+  if (isDemoMode()) {
+    const settings = await getAlertSettings(plantId);
+    const plant = demoPlants.find((item) => item.plantId === plantId);
+    const zone = plant?.zones.find((item) => item.id === zoneId) || plant?.zones[0];
+    if (!zone) throw new ApiError('Add a zone before sending a test alert.', 400);
+    const alert = {
+      alertId: `demo-alert-${Date.now()}`,
+      plantId,
+      zoneId: zone.id,
+      zoneName: zone.name,
+      level,
+      score: settings.thresholds[level],
+      createdAt: new Date().toISOString(),
+      acknowledgedAt: null,
+      acknowledgedBy: null,
+      deliveries: [{ channel: 'email', to: 'Demo mode', status: 'mocked' }],
+      test: true,
+    };
+    const alerts = demoAlerts.get(plantId) || [];
+    demoAlerts.set(plantId, [alert, ...alerts]);
+    return { alert: structuredClone(alert), deliveries: structuredClone(alert.deliveries), mocked: true };
+  }
   return request(`/plants/${encodeURIComponent(plantId)}/alerts/test`, {
     method: 'POST',
     body: JSON.stringify({ level, ...(zoneId ? { zoneId } : {}) }),
@@ -353,6 +396,14 @@ export async function sendTestAlert(plantId, level, zoneId) {
 }
 
 export async function acknowledgePlantAlert(plantId, alertId) {
+  if (isDemoMode()) {
+    const alerts = demoAlerts.get(plantId) || [];
+    const alert = alerts.find((item) => item.alertId === alertId);
+    if (!alert) throw new ApiError('Alert not found.', 404);
+    alert.acknowledgedAt ||= new Date().toISOString();
+    alert.acknowledgedBy ||= 'demo-manager';
+    return { ok: true, alert: structuredClone(alert) };
+  }
   return request(`/plants/${encodeURIComponent(plantId)}/alerts/${encodeURIComponent(alertId)}/ack`, {
     method: 'POST',
     body: JSON.stringify({}),

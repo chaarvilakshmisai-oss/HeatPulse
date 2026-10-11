@@ -4,6 +4,7 @@ import { getPublicSite, getWorkerPlan, recordWorkerBreak, sendReport } from '../
 import { isDemoMode } from '../lib/auth.js';
 import { BREAK_SCHEDULE_NOTE } from '../lib/breaks.js';
 import Sky from '../components/Sky.jsx';
+import WorkerAlertBanner from '../components/WorkerAlertBanner.jsx';
 
 const OPTIONS = [
   { level: 1, word: 'Fine', description: 'Comfortable', color: '#2DD4A0' },
@@ -53,6 +54,8 @@ export default function Tap() {
   const [breakSaving, setBreakSaving] = useState(false);
   const [workerError, setWorkerError] = useState('');
   const [breakError, setBreakError] = useState('');
+  const [workerAlertError, setWorkerAlertError] = useState('');
+  const [workerAlertRetry, setWorkerAlertRetry] = useState(0);
   const [clockNow, setClockNow] = useState(Date.now());
   const selectedOption = OPTIONS.find((option) => option.level === selectedLevel);
 
@@ -112,6 +115,29 @@ export default function Tap() {
       active = false;
     };
   }, [siteId, zoneId]);
+
+  const hasWorkerPlan = Boolean(workerPlan);
+  useEffect(() => {
+    if (!hasWorkerPlan) return undefined;
+    let active = true;
+    async function refreshAlert() {
+      try {
+        const latest = await getWorkerPlan(siteId, zoneId, workerId);
+        if (active) {
+          setWorkerPlan((current) => current ? { ...current, activeAlert: latest.activeAlert } : current);
+          setWorkerAlertError('');
+        }
+      } catch {
+        if (active) setWorkerAlertError('Could not check for a new heat alert.');
+      }
+    }
+    refreshAlert();
+    const timer = window.setInterval(refreshAlert, 60_000);
+    return () => {
+      active = false;
+      window.clearInterval(timer);
+    };
+  }, [hasWorkerPlan, siteId, workerId, workerAlertRetry, zoneId]);
 
   async function retryLocation() {
     setLocationStatus('checking');
@@ -284,6 +310,11 @@ export default function Tap() {
                 </form>
               ) : (
                 <div className="worker-plan" aria-live="polite">
+                  <WorkerAlertBanner
+                    alert={workerPlan.activeAlert}
+                    error={workerAlertError}
+                    onRetry={() => setWorkerAlertRetry((attempt) => attempt + 1)}
+                  />
                   <p><strong>Shift:</strong> {plantTime(workerPlan.shift?.start)}–{plantTime(workerPlan.shift?.end)}</p>
                   {workerPlan.nextBreak ? (
                     <>

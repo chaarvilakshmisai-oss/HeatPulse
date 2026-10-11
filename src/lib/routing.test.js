@@ -2,7 +2,7 @@ import { createElement } from 'react';
 import { readFileSync } from 'node:fs';
 import { describe, expect, it, vi } from 'vitest';
 import { renderToString } from 'react-dom/server';
-import { MemoryRouter } from 'react-router-dom';
+import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import {
   HOME_ROUTE,
   UNKNOWN_ROUTE,
@@ -11,6 +11,7 @@ import {
 import Welcome, { LandingNavActions } from '../pages/Welcome.jsx';
 import Login, { completeManagerSignIn } from '../pages/Login.jsx';
 import ManagerHome, { ManagerHomeContent } from '../pages/ManagerHome.jsx';
+import Alerts from '../pages/Alerts.jsx';
 import { getTapParams } from '../pages/Tap.jsx';
 import { WORKER_NOT_FOUND_MESSAGE, workerLookupErrorMessage } from '../pages/WorkerLogin.jsx';
 import { clearCognitoSessionStorage, initializeBrowserSession, signOut } from './auth.js';
@@ -148,6 +149,7 @@ describe('public routes and manager home', () => {
       { to: '/app/plants/plant-2/qr', label: 'QR codes' },
       { to: '/app/plants/plant-2/reports', label: 'Reports' },
       { to: '/app/plants/plant-2/workers', label: 'Workers' },
+      { to: '/app/plants/plant-2/alerts', label: 'Alerts' },
     ]);
     const shellSource = readFileSync(new URL('../components/AppShell.jsx', import.meta.url), 'utf8');
     const contextSource = readFileSync(new URL('./PlantContext.jsx', import.meta.url), 'utf8');
@@ -181,6 +183,25 @@ describe('public routes and manager home', () => {
     expect(html).toContain('Your plants');
     expect(html).toContain('Add plant');
     expect(html).toContain('Loading plants');
+  });
+
+  it('renders the plant alerts route loading state and includes settings, test, history, and retry controls', () => {
+    const html = renderToString(createElement(
+      MemoryRouter,
+      { initialEntries: ['/app/plants/plant-1/alerts'] },
+      createElement(
+        Routes,
+        null,
+        createElement(Route, { path: '/app/plants/:plantId/alerts', element: createElement(Alerts) })
+      )
+    ));
+    const alertsSource = readFileSync(new URL('../pages/Alerts.jsx', import.meta.url), 'utf8');
+    expect(html).toContain('Loading alert settings');
+    expect(alertsSource).toContain('Enable automatic alerts');
+    expect(alertsSource).toContain('Send test alert');
+    expect(alertsSource).toContain('Alert history');
+    expect(alertsSource).toContain('setLoadAttempt((attempt) => attempt + 1)');
+    expect(alertsSource).toContain('Add recipient');
   });
 });
 

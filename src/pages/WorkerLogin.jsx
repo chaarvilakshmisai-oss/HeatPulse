@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { loginWorker } from '../lib/api.js';
+import { getWorkerPlanById, loginWorker } from '../lib/api.js';
+import WorkerAlertBanner from '../components/WorkerAlertBanner.jsx';
 import Sky from '../components/Sky.jsx';
 
 export const WORKER_NOT_FOUND_MESSAGE = "We couldn't find that worker ID";
@@ -27,6 +28,8 @@ export default function WorkerLogin() {
   const [error, setError] = useState('');
   const [failures, setFailures] = useState(0);
   const [cooldown, setCooldown] = useState(0);
+  const [alertPollError, setAlertPollError] = useState('');
+  const [alertRetry, setAlertRetry] = useState(0);
 
   useEffect(() => {
     if (!cooldown) return undefined;
@@ -35,6 +38,28 @@ export default function WorkerLogin() {
     }, 1000);
     return () => window.clearTimeout(timer);
   }, [cooldown]);
+
+  useEffect(() => {
+    if (!workerPlan?.plantId || !workerPlan?.workerId) return undefined;
+    let active = true;
+    async function refreshAlert() {
+      try {
+        const latest = await getWorkerPlanById(workerPlan.plantId, workerPlan.workerId);
+        if (active) {
+          setWorkerPlan((current) => current ? { ...current, activeAlert: latest.activeAlert } : current);
+          setAlertPollError('');
+        }
+      } catch {
+        if (active) setAlertPollError('Could not check for a new heat alert.');
+      }
+    }
+    refreshAlert();
+    const timer = window.setInterval(refreshAlert, 60_000);
+    return () => {
+      active = false;
+      window.clearInterval(timer);
+    };
+  }, [alertRetry, workerPlan?.plantId, workerPlan?.workerId]);
 
   async function submit(event) {
     event.preventDefault();
@@ -101,6 +126,11 @@ export default function WorkerLogin() {
             <div className="worker-plan" aria-live="polite">
               <h2>{workerPlan.plantName}</h2>
               <p>Welcome, {workerPlan.name}{workerPlan.zone?.name ? ` · ${workerPlan.zone.name}` : ''}</p>
+              <WorkerAlertBanner
+                alert={workerPlan.activeAlert}
+                error={alertPollError}
+                onRetry={() => setAlertRetry((attempt) => attempt + 1)}
+              />
               {workerPlan.shift ? (
                 <p><strong>Shift:</strong> {formatTime(workerPlan.shift.start, workerPlan.shift.timeZone)}–{formatTime(workerPlan.shift.end, workerPlan.shift.timeZone)}</p>
               ) : <p>No upcoming shift is scheduled.</p>}

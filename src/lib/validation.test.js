@@ -74,6 +74,13 @@ describe('manager form validation', () => {
     })).toEqual({});
   });
 
+  it('requires an international phone number only when SMS consent is checked', () => {
+    const worker = { name: 'Worker One', shiftStart: '07:00', shiftEnd: '15:00', phone: '+14155552671' };
+    expect(validateWorker({ ...worker, smsConsent: false })).toEqual({});
+    expect(validateWorker({ ...worker, phone: '', smsConsent: true })).toHaveProperty('phone');
+    expect(validateWorker({ ...worker, smsConsent: true })).toEqual({});
+  });
+
   it('rejects an invalid plant IANA timezone when supplied', () => {
     expect(validateSite({
       name: 'Plant 1',

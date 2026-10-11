@@ -7,13 +7,15 @@ import KpiCard from '../components/KpiCard.jsx';
 import ShiftPlan from '../components/ShiftPlan.jsx';
 import ZoneGrid from '../components/ZoneGrid.jsx';
 import { HOURLY_CURVE } from '../data/mock.js';
-import { getZones } from '../lib/api.js';
+import { acknowledgePlantAlert, getPlantAlerts, getZones } from '../lib/api.js';
 import { isDemoMode } from '../lib/auth.js';
 import { summarizeDashboard } from '../lib/dashboard.js';
+import { activePlantAlerts } from '../lib/alertState.js';
 
 export default function Dashboard() {
   const { plantId } = useParams();
   const [zones, setZones] = useState([]);
+  const [alerts, setAlerts] = useState([]);
   const [hourIndex, setHourIndex] = useState(7);
   const [isPlaying, setIsPlaying] = useState(false);
   const [isUsingSampleData] = useState(isDemoMode());
@@ -22,15 +24,18 @@ export default function Dashboard() {
   const [error, setError] = useState('');
   const [updatedAt, setUpdatedAt] = useState(null);
   const [hasLoadedData, setHasLoadedData] = useState(false);
+  const [acknowledgingId, setAcknowledgingId] = useState('');
+  const [acknowledgementError, setAcknowledgementError] = useState('');
 
   const refresh = useCallback(async (initial = false) => {
     if (initial) setLoading(true);
     setRefreshing(true);
     setError('');
     try {
-      const result = await getZones(plantId);
-      if (!Array.isArray(result)) throw new Error('The zones response was not valid.');
-      setZones(result);
+      const [zoneResult, alertResult] = await Promise.all([getZones(plantId), getPlantAlerts(plantId)]);
+      if (!Array.isArray(zoneResult) || !Array.isArray(alertResult)) throw new Error('The dashboard response was not valid.');
+      setZones(zoneResult);
+      setAlerts(alertResult);
       setHasLoadedData(true);
       setUpdatedAt(new Date());
     } catch (requestError) {
@@ -40,6 +45,19 @@ export default function Dashboard() {
       setRefreshing(false);
     }
   }, [plantId]);
+
+  async function acknowledge(alertId) {
+    setAcknowledgingId(alertId);
+    setAcknowledgementError('');
+    try {
+      await acknowledgePlantAlert(plantId, alertId);
+      await refresh();
+    } catch (acknowledgeError) {
+      setAcknowledgementError(acknowledgeError.message || 'Unable to acknowledge this alert.');
+    } finally {
+      setAcknowledgingId('');
+    }
+  }
 
   useEffect(() => {
     refresh(true);
@@ -64,6 +82,7 @@ export default function Dashboard() {
     () => summarizeDashboard(zones, hourIndex),
     [zones, hourIndex]
   );
+  const activeAlerts = useMemo(() => activePlantAlerts(alerts), [alerts]);
 
   if (loading) return <div className="card page-state" role="status">Loading dashboard…</div>;
 
@@ -90,6 +109,28 @@ export default function Dashboard() {
           </button>
         </div>
         <p className="forecast-note">Heat scores are guidance to support decisions, not medical advice.</p>
+        {acknowledgementError && <p className="form-error" role="alert">{acknowledgementError}</p>}
+        {activeAlerts.length > 0 && (
+          <section className="heat-alert-list" aria-label="Active heat alerts">
+            {activeAlerts.map((alert) => (
+              <article className={`heat-alert-banner level-${alert.level}`} key={alert.alertId} role="status">
+                <div>
+                  <strong>{alert.level.toUpperCase()} heat risk · {alert.zoneName || alert.zoneId}</strong>
+                  <p>Score {alert.score}. Check on workers and follow the site heat-safety plan.</p>
+                  {alert.acknowledgedAt && <small>Acknowledged{alert.acknowledgedBy ? ` by ${alert.acknowledgedBy}` : ''}</small>}
+                </div>
+                <button
+                  type="button"
+                  className="secondary-button"
+                  disabled={Boolean(alert.acknowledgedAt) || acknowledgingId === alert.alertId}
+                  onClick={() => acknowledge(alert.alertId)}
+                >
+                  {alert.acknowledgedAt ? 'Acknowledged' : acknowledgingId === alert.alertId ? 'Acknowledging…' : 'Acknowledge'}
+                </button>
+              </article>
+            ))}
+          </section>
+        )}
 
         {!zones.length ? (
           <section className="card empty-state">

@@ -14,6 +14,7 @@ import Site from './pages/Site.jsx';
 import QrCodes from './pages/QrCodes.jsx';
 import Reports from './pages/Reports.jsx';
 import Workers from './pages/Workers.jsx';
+import Alerts from './pages/Alerts.jsx';
 import { AppShell } from './components/AppShell.jsx';
 import { getAppConfigurationProblem } from './lib/config.js';
 import Sky from './components/Sky.jsx';
@@ -100,8 +101,9 @@ function ManagerRoutes() {
       '/app/qr': ['QR codes', 'Create worker check-in QR codes.'],
       '/app/reports': ['Reports', 'Review worker heat reports and breaks.'],
       '/app/workers': ['Workers', 'Manage worker IDs and shifts.'],
+      '/app/alerts': ['Alerts', 'Configure automatic heat alerts and review alert history.'],
     };
-    const plantPage = location.pathname.match(/^\/app\/plants\/[^/]+\/(dashboard|zones|site|qr|reports|workers)$/)?.[1];
+    const plantPage = location.pathname.match(/^\/app\/plants\/[^/]+\/(dashboard|zones|site|qr|reports|workers|alerts)$/)?.[1];
     const [page, description] = pages[location.pathname]
       || (plantPage ? pages[`/app/${plantPage}`] : null)
       || ['Page not found', 'This HeatPulse page could not be found.'];
@@ -148,6 +150,7 @@ function ManagerRoutes() {
           <Route path="qr" element={<QrCodes />} />
           <Route path="reports" element={<Reports />} />
           <Route path="workers" element={<Workers />} />
+          <Route path="alerts" element={<Alerts />} />
         </Route>
         <Route path="dashboard" element={<LegacyPlantRedirect />} />
         <Route path="zones" element={<LegacyPlantRedirect />} />
@@ -155,6 +158,7 @@ function ManagerRoutes() {
         <Route path="qr" element={<LegacyPlantRedirect />} />
         <Route path="reports" element={<LegacyPlantRedirect />} />
         <Route path="workers" element={<LegacyPlantRedirect />} />
+        <Route path="alerts" element={<LegacyPlantRedirect />} />
         <Route path="*" element={<AppNotFound />} />
       </Route>
       <Route path="*" element={<Navigate to={UNKNOWN_ROUTE} replace />} />

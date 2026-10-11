@@ -662,6 +662,8 @@ async function workerLogin(event) {
   return json(200, {
     name: worker.name,
     plantName: plant.name,
+    plantId: plant.plantId,
+    workerId,
     zone: zone ? { id: zone.id, name: zone.name } : null,
     shift: plan.shift,
     nextBreak: plan.nextBreak,
@@ -1150,7 +1152,11 @@ async function recordPublicBreak(event) {
     ? { ...worker, activeBreakScheduledAt: scheduledAt, activeBreakZoneId: zoneId }
     : { ...worker, lastEndedBreakScheduledAt: scheduledAt, activeBreakScheduledAt: undefined };
   const plan = getWorkerPlan({ ...updatedWorker, zone: { ...zone, recentTooHotTaps: recentHot } }, timeZone, updatedEvents, now);
-  return json(201, { ok: true, breakEvent: { type, timestamp, withinRadius }, plan });
+  return json(201, {
+    ok: true,
+    breakEvent: { type, timestamp, withinRadius },
+    plan: { ...plan, activeAlert: await getActiveWorkerAlert(siteId, zoneId) },
+  });
 }
 
 async function getBreakSummary(event) {

@@ -8,7 +8,7 @@ export function getNavItems(selectedPlantId) {
   if (!selectedPlantId) return [{ to: '/app/home', label: 'Home' }];
   return [
     { to: '/app/home', label: 'Home' },
-    ...['dashboard', 'zones', 'site', 'qr', 'reports', 'workers'].map((page) => ({
+    ...['dashboard', 'zones', 'site', 'qr', 'reports', 'workers', 'alerts'].map((page) => ({
       to: `/app/plants/${encodeURIComponent(selectedPlantId)}/${page}`,
       label: page === 'site' ? 'Site & location' : page === 'qr' ? 'QR codes' : `${page[0].toUpperCase()}${page.slice(1)}`,
     })),

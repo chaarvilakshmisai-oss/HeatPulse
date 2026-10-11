@@ -752,6 +752,23 @@ button {
 .reports-table tbody tr:last-child td { border-bottom: 0; }
 .location-badge { display: inline-block; padding: 4px 9px; border: 1px solid var(--line); border-radius: 999px; color: var(--ink); font-size: 11px; white-space: nowrap; }
 .location-badge.verified { border-color: #12A57A; color: #12A57A; }
+.alerts-page h2 { margin: 0; font-size: 18px; }
+.alerts-page .form-card > p { margin: 0; }
+.alert-fieldset { display: flex; flex-direction: column; gap: 12px; min-width: 0; margin: 0; padding: 14px; border: 1px solid var(--line); border-radius: 10px; }
+.alert-fieldset legend { padding: 0 5px; color: var(--ink); font-size: 14px; font-weight: 600; }
+.alert-fieldset .form-grid { width: 100%; }
+.alert-fieldset .form-grid input { max-width: 180px; }
+.recipient-input { display: flex; flex: 1 1 220px; flex-direction: column; gap: 6px; color: var(--ink); font-size: 13px; font-weight: 500; }
+.recipient-input input { width: 100%; min-height: 40px; padding: 8px 10px; border: 1px solid #94A3B8; border-radius: 8px; background: #fff; color: var(--ink); font: inherit; }
+.recipient-list { display: flex; flex-wrap: wrap; gap: 8px; margin: 0; padding: 0; list-style: none; }
+.recipient-list li { display: flex; align-items: center; gap: 10px; padding: 5px 8px 5px 12px; border: 1px solid var(--line); border-radius: 9px; color: var(--ink); font-size: 13px; }
+.alerts-table { min-width: 860px; }
+.alert-level { display: inline-block; padding: 4px 9px; border-radius: 999px; background: #E8EEF8; color: var(--ink); font-size: 11px; font-weight: 700; text-transform: uppercase; }
+.alert-level.level-watch { background: #FFF4CE; color: #735200; }
+.alert-level.level-high { background: #FFE7C2; color: #7A3900; }
+.alert-level.level-critical { background: #FCE1E5; color: #A1122A; }
+.alert-level.level-clear { background: #DDF5EA; color: #126044; }
+.alert-test-label { color: var(--ink); font-size: 11px; }
 .visually-hidden { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0; }
 
 @media (max-width: 900px) {
