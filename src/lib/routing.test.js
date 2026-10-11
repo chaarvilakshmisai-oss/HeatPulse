@@ -79,7 +79,7 @@ describe('public routes and manager home', () => {
 
   it('provides per-route metadata and an app-local not-found page', () => {
     const appSource = readFileSync(new URL('../App.jsx', import.meta.url), 'utf8');
-    expect(appSource).toContain('document.title = `${page} - HeatPulse`');
+    expect(appSource).toContain("document.title = location.pathname === '/' ? 'HeatPulse' : `${page} - HeatPulse`");
     expect(appSource).toContain('meta.content = description');
     expect(appSource).toContain('<Route path="*" element={<AppNotFound />} />');
     expect(appSource).toContain('<Route path="*" element={<Navigate to={UNKNOWN_ROUTE} replace />} />');

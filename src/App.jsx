@@ -96,7 +96,7 @@ function ManagerRoutes() {
       '/app/workers': ['Workers', 'Manage worker IDs and shifts.'],
     };
     const [page, description] = pages[location.pathname] || ['Page not found', 'This HeatPulse page could not be found.'];
-    document.title = `${page} - HeatPulse`;
+    document.title = location.pathname === '/' ? 'HeatPulse' : `${page} - HeatPulse`;
     let meta = document.querySelector('meta[name="description"]');
     if (!meta) {
       meta = document.createElement('meta');
