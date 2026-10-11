@@ -13,13 +13,19 @@ const { loadItems, saveItems } = require("./dev-store");
 
 const DATA_FILE = process.env.HEATPULSE_DEV_DATA_FILE || path.join(__dirname, ".dev-data.json");
 const LEGACY_DATA_FILE = path.join(__dirname, ".local-data.json");
-const items = loadItems(
-  !process.env.HEATPULSE_DEV_DATA_FILE
-    && !fs.existsSync(DATA_FILE)
-    && fs.existsSync(LEGACY_DATA_FILE)
-    ? LEGACY_DATA_FILE
-    : DATA_FILE,
-);
+let items;
+try {
+  items = loadItems(
+    !process.env.HEATPULSE_DEV_DATA_FILE
+      && !fs.existsSync(DATA_FILE)
+      && fs.existsSync(LEGACY_DATA_FILE)
+      ? LEGACY_DATA_FILE
+      : DATA_FILE,
+  );
+} catch (error) {
+  console.error(`Unable to load local dev data: ${error.message}`);
+  process.exit(1);
+}
 
 function persistItems() {
   saveItems(DATA_FILE, items);

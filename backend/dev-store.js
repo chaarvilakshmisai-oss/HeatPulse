@@ -4,8 +4,15 @@ const fs = require("node:fs");
 
 function loadItems(filePath) {
   if (!fs.existsSync(filePath)) return [];
-  const items = JSON.parse(fs.readFileSync(filePath, "utf8"));
-  if (!Array.isArray(items)) throw new Error(`Local dev data must be an array: ${filePath}`);
+  let items;
+  try {
+    items = JSON.parse(fs.readFileSync(filePath, "utf8"));
+  } catch {
+    throw new Error("Local dev data is not valid JSON; the original file was preserved");
+  }
+  if (!Array.isArray(items)) {
+    throw new Error("Local dev data must contain an array; the original file was preserved");
+  }
   return items;
 }
 
