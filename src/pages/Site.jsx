@@ -43,15 +43,22 @@ export default function Site() {
   const [errors, setErrors] = useState({});
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
+  const [loadError, setLoadError] = useState('');
+  const [loadAttempt, setLoadAttempt] = useState(0);
 
   useEffect(() => {
     let active = true;
+    setLoading(true);
+    setLoadError('');
     getSite()
       .then((result) => {
         if (active && result) setSite({ ...INITIAL_SITE, ...result });
       })
       .catch((requestError) => {
-        if (active) setError(requestError.message || 'Unable to load plant details.');
+        if (active) {
+          setLoadError(requestError.message || 'Unable to load plant details.');
+          setError(requestError.message || 'Unable to load plant details.');
+        }
       })
       .finally(() => {
         if (active) setLoading(false);
@@ -59,7 +66,7 @@ export default function Site() {
     return () => {
       active = false;
     };
-  }, []);
+  }, [loadAttempt]);
 
   useEffect(() => {
     let active = true;
@@ -204,6 +211,7 @@ export default function Site() {
       </header>
       <p className="soft-check-note">Location comes from the browser and is a soft check; browser-reported coordinates can be inaccurate or faked.</p>
       {error && <p className="form-error" role="alert">{error}</p>}
+      {loadError && <button type="button" className="secondary-button" onClick={() => setLoadAttempt((attempt) => attempt + 1)}>Retry loading plant</button>}
       {success && <p className="success-message" role="status">{success}</p>}
       <div className="connection-status" role="status" aria-live="polite">
         <strong>Connection status:</strong>{' '}

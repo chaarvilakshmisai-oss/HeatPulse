@@ -1,5 +1,5 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
-import { BrowserRouter as Router, Navigate, Outlet, Route, Routes, useLocation, useNavigate } from 'react-router-dom';
+import { BrowserRouter as Router, Link, Navigate, Outlet, Route, Routes, useLocation, useNavigate } from 'react-router-dom';
 import { getCurrentUser, isDemoMode, signOut } from './lib/auth.js';
 import { getSite, invalidateSiteCache } from './lib/api.js';
 import Dashboard from './pages/Dashboard.jsx';
@@ -81,6 +81,31 @@ function ManagerRoutes() {
   const navigate = useNavigate();
   const previousPathname = useRef(location.pathname);
 
+  useEffect(() => {
+    const pages = {
+      '/': ['HeatPulse', 'HeatPulse heat-safety tools for plant managers and workers.'],
+      '/login': ['Manager sign in', 'Sign in to manage your HeatPulse plant.'],
+      '/worker-login': ['Worker login', 'View your HeatPulse shift and break plan.'],
+      '/tap': ['Worker check-in', 'Send a worker heat check-in with HeatPulse.'],
+      '/app/home': ['Your plants', 'View and manage your HeatPulse plants.'],
+      '/app/dashboard': ['Dashboard', 'Review heat guidance and worker reports.'],
+      '/app/site': ['Site & location', 'Set your HeatPulse plant name and location.'],
+      '/app/zones': ['Zones', 'Manage work areas and their conditions.'],
+      '/app/qr': ['QR codes', 'Create worker check-in QR codes.'],
+      '/app/reports': ['Reports', 'Review worker heat reports and breaks.'],
+      '/app/workers': ['Workers', 'Manage worker IDs and shifts.'],
+    };
+    const [page, description] = pages[location.pathname] || ['Page not found', 'This HeatPulse page could not be found.'];
+    document.title = `${page} - HeatPulse`;
+    let meta = document.querySelector('meta[name="description"]');
+    if (!meta) {
+      meta = document.createElement('meta');
+      meta.name = 'description';
+      document.head.append(meta);
+    }
+    meta.content = description;
+  }, [location.pathname]);
+
   useLayoutEffect(() => {
     if (previousPathname.current !== location.pathname) {
       previousPathname.current = location.pathname;
@@ -113,9 +138,20 @@ function ManagerRoutes() {
           <Route path="reports" element={<Reports />} />
           <Route path="workers" element={<Workers />} />
         </Route>
+        <Route path="*" element={<AppNotFound />} />
       </Route>
       <Route path="*" element={<Navigate to={UNKNOWN_ROUTE} replace />} />
     </Routes>
+  );
+}
+
+function AppNotFound() {
+  return (
+    <section className="card empty-state" role="status">
+      <h1>Page not found</h1>
+      <p>That HeatPulse page does not exist.</p>
+      <Link to="/app/home">Return to your plants</Link>
+    </section>
   );
 }
 

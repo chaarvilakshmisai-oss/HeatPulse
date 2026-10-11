@@ -76,6 +76,7 @@ export default function Reports() {
         <div>
           <h1>Worker reports</h1>
           <p>The latest 50 anonymous worker taps.</p>
+          <p className="forecast-note">Heat scores are guidance to support decisions, not medical advice.</p>
         </div>
         <div className="reports-refresh">
           <span className="updated-label">{updatedAt ? `Updated ${updatedAt.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hourCycle: 'h23' })}` : 'Not updated yet'}</span>

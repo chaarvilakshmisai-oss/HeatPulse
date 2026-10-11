@@ -15,6 +15,8 @@ export default function Workers() {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
+  const [loadError, setLoadError] = useState('');
+  const [loadAttempt, setLoadAttempt] = useState(0);
 
   async function refresh() {
     const [siteResult, zoneResult, workerResult] = await Promise.all([getSite(), getZones(), getWorkers()]);
@@ -28,6 +30,8 @@ export default function Workers() {
 
   useEffect(() => {
     let active = true;
+    setLoading(true);
+    setLoadError('');
     Promise.all([getSite(), getZones(), getWorkers()])
       .then(([siteResult, zoneResult, workerResult]) => {
         if (!active) return;
@@ -37,7 +41,10 @@ export default function Workers() {
         if (zoneResult.length) setForm((current) => ({ ...current, zoneId: zoneResult[0].id }));
       })
       .catch((requestError) => {
-        if (active) setError(requestError.message || 'Unable to load workers.');
+        if (active) {
+          setLoadError(requestError.message || 'Unable to load workers.');
+          setError(requestError.message || 'Unable to load workers.');
+        }
       })
       .finally(() => {
         if (active) setLoading(false);
@@ -45,7 +52,7 @@ export default function Workers() {
     return () => {
       active = false;
     };
-  }, []);
+  }, [loadAttempt]);
 
   function edit(worker) {
     setEditingId(worker.workerId);
@@ -125,6 +132,7 @@ export default function Workers() {
         </div>
       </header>
       {error && <p className="form-error" role="alert">{error}</p>}
+      {loadError && <button type="button" className="secondary-button" onClick={() => setLoadAttempt((attempt) => attempt + 1)}>Retry loading workers</button>}
       {success && <p className="success-message" role="status">{success}</p>}
       <form className="card form-card" onSubmit={submit}>
         <h2>{editingId ? `Edit ${editingId}` : 'Add worker'}</h2>

@@ -10,9 +10,12 @@ export default function QrCodes() {
   const [codes, setCodes] = useState({});
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const [retryCount, setRetryCount] = useState(0);
 
   useEffect(() => {
     let active = true;
+    setLoading(true);
+    setError('');
     async function load() {
       try {
         const [siteResult, zoneResult] = await Promise.all([getSite(), getZones()]);
@@ -40,10 +43,17 @@ export default function QrCodes() {
     return () => {
       active = false;
     };
-  }, []);
+  }, [retryCount]);
 
   if (loading) return <div className="card page-state" role="status">Loading QR codes…</div>;
-  if (error) return <div className="card page-state" role="alert">{error}</div>;
+  if (error) {
+    return (
+      <div className="card page-state">
+        <p role="alert">{error}</p>
+        <button type="button" className="secondary-button" onClick={() => setRetryCount((count) => count + 1)}>Retry</button>
+      </div>
+    );
+  }
   if (!site?.siteId) {
     return (
       <section className="card page-state">

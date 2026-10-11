@@ -47,7 +47,7 @@ function DashboardMockup() {
     <div className="landing-dashboard" role="img" aria-label="Illustration of a heat-risk dashboard with green, amber, and red zone scores">
       <div className="landing-dashboard-top">
         <div>
-          <span className="landing-mock-eyebrow">HEATPULSE · LIVE OVERVIEW</span>
+          <span className="landing-mock-eyebrow">HeatPulse · live overview</span>
           <h2>Zone heat scores</h2>
         </div>
         <span className="landing-live-dot" aria-label="Illustration"> </span>

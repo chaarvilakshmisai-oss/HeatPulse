@@ -93,10 +93,14 @@ export default function Zones() {
   const [dirty, setDirty] = useState(false);
   const [editingKey, setEditingKey] = useState(null);
   const [validation, setValidation] = useState({});
+  const [loadError, setLoadError] = useState('');
+  const [loadAttempt, setLoadAttempt] = useState(0);
   const navigate = useNavigate();
 
   useEffect(() => {
     let active = true;
+    setLoading(true);
+    setLoadError('');
     getSite()
       .then((result) => {
         if (!active) return;
@@ -104,7 +108,10 @@ export default function Zones() {
         setZones(prepareZones(result?.zones || []));
       })
       .catch((requestError) => {
-        if (active) setError(requestError.message || 'Unable to load zones.');
+        if (active) {
+          setLoadError(requestError.message || 'Unable to load zones.');
+          setError(requestError.message || 'Unable to load zones.');
+        }
       })
       .finally(() => {
         if (active) setLoading(false);
@@ -112,7 +119,7 @@ export default function Zones() {
     return () => {
       active = false;
     };
-  }, []);
+  }, [loadAttempt]);
 
   useEffect(() => {
     if (!dirty) return undefined;
@@ -225,7 +232,13 @@ export default function Zones() {
 
   if (loading) return <div className="card page-state" role="status">Loading zones…</div>;
   if (error && !site && !zones.length) {
-    return <section className="card page-state"><p role="alert">{error}</p><Link to="/app/site">Set up your plant</Link></section>;
+    return (
+      <section className="card page-state">
+        <p role="alert">{error}</p>
+        {loadError && <button type="button" className="secondary-button" onClick={() => setLoadAttempt((attempt) => attempt + 1)}>Retry</button>}
+        <Link to="/app/site">Set up your plant</Link>
+      </section>
+    );
   }
 
   return (

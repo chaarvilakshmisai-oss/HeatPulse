@@ -87,6 +87,7 @@ export default function Dashboard() {
             {refreshing ? 'Refreshing…' : 'Refresh'}
           </button>
         </div>
+        <p className="forecast-note">Heat scores are guidance to support decisions, not medical advice.</p>
 
         {!zones.length ? (
           <section className="card empty-state">
